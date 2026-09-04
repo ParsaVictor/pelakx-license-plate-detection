@@ -37,3 +37,6 @@ Thumbs.db
 
 # Secrets
 .env
+
+# Session/tool state
+.mimosa/
