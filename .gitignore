@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Models & heavy assets (use release attachments / HF hub instead)
+*.pt
+*.onnx
+*.engine
+*.tflite
+*.trt
+!models/.gitkeep
+
+# Data & outputs
+data/videos/*
+!data/videos/.gitkeep
+outputs/
+runs/
+*.csv
+*.sqlite
+*.db
+
+# Notebooks
+.ipynb_checkpoints/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Secrets
+.env
