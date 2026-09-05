@@ -1,0 +1,95 @@
+# ============================================================================
+#  PelakX default configuration
+#  Every key is optional — this file documents the defaults rather than
+#  changing them. Copy it, edit what you need, and pass --config.
+# ============================================================================
+
+country: IR                 # any code from `pelakx countries`, see configs/countries/
+frame_stride: 1             # process every Nth frame (2 ~ halves cost on 30fps footage)
+max_frames: 0               # 0 = whole video
+track_timeout: 2.0          # seconds a vehicle may be unseen before its event is emitted
+min_export_confidence: 0.35 # below this, the event is exported without a plate
+
+# --- vehicle detection + tracking ------------------------------------------
+vehicle:
+  weights: yolo26n.pt       # yolo26n/s/m/l/x, yolo11*, or your own .pt/.onnx
+  conf: 0.30
+  iou: 0.50
+  imgsz: 640
+  device: cpu               # cpu | cuda:0 | mps
+  classes: [2, 3, 5, 7]     # COCO: car, motorcycle, bus, truck
+  tracker: bytetrack.yaml   # bytetrack.yaml (fast) | botsort.yaml (better occlusion handling)
+  half: false               # FP16, CUDA only
+
+# --- plate detection --------------------------------------------------------
+plate:
+  weights: null             # null = auto (models/license_plate.pt, else the ONNX detector)
+  conf: 0.25
+  imgsz: 640
+  device: cpu
+  vehicle_pad: 0.02         # grow the vehicle box before searching inside it
+
+# --- OCR --------------------------------------------------------------------
+ocr:
+  engine: null              # null = the country's preferred chain; see `pelakx engines`
+  options: {}               # forwarded to the engine, e.g. {model: cct-s-v2-global-model}
+  max_reads_per_second: 6.0 # OCR budget per tracked vehicle (0 = every frame)
+  early_stop_confidence: 0.97
+  early_stop_min_votes: 4
+  repair_budget: 2          # max OCR-confusion substitutions the grammar may apply
+
+# --- crop quality gate ------------------------------------------------------
+quality:
+  enabled: true
+  min_width: 48
+  min_height: 14
+  target_width: 160
+  min_sharpness: 18.0       # Laplacian variance; below this the crop counts as blurred
+  good_sharpness: 140.0
+  aspect_min: 1.4
+  aspect_max: 7.0
+  min_score: 0.25
+  rectify: true             # perspective-unwarp before OCR
+  enhance: true             # upscale + CLAHE
+  ocr_height: 64
+
+# --- analytics --------------------------------------------------------------
+analytics:
+  # Counting lines in pixel coordinates: name -> [[x1, y1], [x2, y2]]
+  lines: {}
+  #   north_gate: [[100, 500], [1180, 500]]
+
+  # Speed calibration: 4+ image points and the metres they map to.
+  # Without both lists, speed is not reported (an uncalibrated number is worse
+  # than no number).
+  speed_image_points: []
+  speed_world_points: []
+  speed_min_frames: 8
+
+  watchlist: []             # ["12ب34511", "34AB*", "re:^12ب"]
+  watchlist_max_distance: 1 # allow N character edits; confusable swaps are cheaper
+
+# --- privacy ----------------------------------------------------------------
+privacy:
+  blur_plates: false
+  blur_faces: false
+  hash_plates: false
+  hash_salt: ""             # required when hash_plates is true; keep it secret
+  no_crops: false
+
+# --- outputs ----------------------------------------------------------------
+output:
+  dir: outputs
+  video: true
+  video_name: annotated.mp4
+  csv: true
+  csv_name: events.csv
+  jsonl: false
+  jsonl_name: events.jsonl
+  sqlite: true
+  sqlite_name: pelakx.sqlite
+  crops: true
+  crops_dir: crops
+  draw_labels: true
+  draw_tracks: true
+  font: null                # path to a TTF with your script's glyphs
