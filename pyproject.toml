@@ -43,13 +43,13 @@ fa = ["hezar>=0.40", "arabic-reshaper>=3.0", "python-bidi>=0.4"]
 paddle = ["paddleocr>=3.0", "paddlepaddle>=3.0"]
 easyocr = ["easyocr>=1.7"]
 # Dashboard + reporting
-dash = ["streamlit>=1.30", "pandas>=2.0", "plotly>=5.18"]
+dash = ["streamlit>=1.30", "pandas>=2.0", "plotly>=5.19"]
 dev = ["pytest>=8.0", "ruff>=0.5", "mypy>=1.10"]
 all = [
   "ultralytics>=8.4.0", "torch>=2.2", "torchvision>=0.17",
   "onnxruntime>=1.18", "fast-plate-ocr>=1.0", "open-image-models>=0.3",
   "hezar>=0.40", "arabic-reshaper>=3.0", "python-bidi>=0.4",
-  "streamlit>=1.30", "pandas>=2.0", "plotly>=5.18",
+  "streamlit>=1.30", "pandas>=2.0", "plotly>=5.19",
 ]
 
 [project.urls]

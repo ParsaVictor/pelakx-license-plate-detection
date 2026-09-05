@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import plotly
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -82,6 +83,29 @@ def load_events(db_path: str, mtime: float) -> pd.DataFrame:
         frame["plate_display"] = frame["plate_display"].fillna("")
         frame["alerts"] = frame["alerts"].fillna("")
     return frame
+
+
+def _rgba(hex_color: str, alpha: float) -> str:
+    """#rrggbb -> rgba(r, g, b, a). Plotly rejects 8-digit hex."""
+    h = hex_color.lstrip("#")
+    r, g, b = (int(h[i : i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r}, {g}, {b}, {alpha})"
+
+
+def _bar_marker(color: str) -> dict:
+    """Bar marker with 4px rounded data-ends where the plotly build supports it.
+
+    `cornerradius` landed in plotly 5.19; older builds raise on it, so degrade
+    to square ends rather than refusing to draw the chart.
+    """
+    marker = {"color": color}
+    try:
+        major, minor, *_ = (int(part) for part in plotly.__version__.split(".")[:2])
+        if (major, minor) >= (5, 19):
+            marker["cornerradius"] = 4
+    except (ValueError, AttributeError):
+        pass
+    return marker
 
 
 def style(fig: go.Figure, palette: dict, *, height: int = 260) -> go.Figure:
@@ -191,7 +215,7 @@ def main() -> None:
                     mode="lines",
                     line=dict(color=palette["series"][0], width=2, shape="spline"),
                     fill="tozeroy",
-                    fillcolor=palette["series"][0] + "22",
+                    fillcolor=_rgba(palette["series"][0], 0.13),
                     hovertemplate="t=%{x:.0f}s<br>%{y} vehicles<extra></extra>",
                 )
             )
@@ -207,7 +231,7 @@ def main() -> None:
                 x=mix["n"],
                 y=mix["vehicle_class"],
                 orientation="h",
-                marker=dict(color=palette["series"][0], cornerradius=4),
+                marker=_bar_marker(palette["series"][0]),
                 text=mix["n"],
                 textposition="outside",
                 textfont=dict(color=palette["text_secondary"]),
@@ -226,7 +250,7 @@ def main() -> None:
                 go.Histogram(
                     x=identified["confidence"],
                     nbinsx=20,
-                    marker=dict(color=palette["series"][2], cornerradius=4),
+                    marker=_bar_marker(palette["series"][2]),
                     hovertemplate="confidence %{x}<br>%{y} vehicles<extra></extra>",
                 )
             )
@@ -241,7 +265,7 @@ def main() -> None:
                 go.Histogram(
                     x=speeds,
                     nbinsx=20,
-                    marker=dict(color=palette["series"][1], cornerradius=4),
+                    marker=_bar_marker(palette["series"][1]),
                     hovertemplate="%{x} km/h<br>%{y} vehicles<extra></extra>",
                 )
             )
@@ -298,7 +322,7 @@ def main() -> None:
         st.markdown("#### Plate crops")
         for row in range(0, min(len(crops), 24), 8):
             for column, crop in zip(st.columns(8), crops[row : row + 8], strict=False):
-                column.image(crop, use_container_width=True)
+                column.image(crop)
 
 
 if __name__ == "__main__":
