@@ -210,3 +210,34 @@ def test_every_shipped_country_parses_a_sample_of_its_own_layouts():
             assert read is not None, (
                 f"{spec.code}/{layout.id} could not parse its own sample {sample!r}"
             )
+
+
+# ---------------------------------------------------------------------------
+# right-to-left rendering
+# ---------------------------------------------------------------------------
+def test_shape_rtl_keeps_plate_groups_in_reading_order():
+    """Regression: bidi over the whole label swapped the plate's digit groups.
+
+    An Iranian plate is read left-to-right even though it is written in an RTL
+    script. Reordering the full mixed string renders "12 ب 345 | ایران 11" as
+    "345 ب 12 …" — a different plate, drawn confidently onto the video.
+    """
+    from pelakx.grammar.normalize import shape_rtl
+
+    shaped = shape_rtl("12 ب 345 | ایران 11")
+    assert shaped.index("12") < shaped.index("345") < shaped.index("11")
+
+
+def test_shape_rtl_leaves_latin_untouched():
+    from pelakx.grammar.normalize import shape_rtl
+
+    assert shape_rtl("AB12 CDE") == "AB12 CDE"
+
+
+def test_shape_rtl_reverses_arabic_runs_for_display():
+    """Arabic runs must be reversed so PIL, which draws LTR, shows them RTL."""
+    from pelakx.grammar.normalize import shape_rtl
+
+    shaped = shape_rtl("ایران")
+    assert shaped != "ایران"  # reshaped into presentation forms and reversed
+    assert len(shaped) > 0

@@ -76,6 +76,12 @@ _INVISIBLE = re.compile(
 # characters that are plate furniture, never part of the reading
 _SEPARATORS = re.compile(r"[\s\-‐-―_.,;:/\\|·•*'\"`~^+=()\[\]{}<>?!@#$%&]+")
 
+# One run of Arabic-script letters (Arabic-Indic *digits* are excluded: numbers
+# read left-to-right even inside RTL text). Interior spaces are part of the run
+# so that several Arabic words stay in right-to-left order relative to each other.
+_ARABIC_LETTER = "ؠ-ٟٮ-ۯۺ-ۿݐ-ݿﭐ-﷿ﹰ-﻿"
+_ARABIC_RUN = re.compile(f"[{_ARABIC_LETTER}]+(?:[ ‌]+[{_ARABIC_LETTER}]+)*")
+
 
 def fold_digits(text: str) -> str:
     """Convert any supported digit script to ASCII digits."""
@@ -153,19 +159,52 @@ def tokenize(text: str, letters: list[str] | tuple[str, ...] = ()) -> list[str]:
     return tokens
 
 
-def shape_rtl(text: str) -> str:
-    """Reshape + bidi-reorder Persian/Arabic text so OpenCV/PIL draws it correctly.
+def shape_rtl(text: str, base_dir: str = "L") -> str:
+    """Reshape + bidi-reorder Arabic-script text so PIL draws it correctly.
+
+    Args:
+        text: the string to render.
+        base_dir: paragraph direction, ``"L"`` or ``"R"``.
+
+    **Why the default is ``"L"``.** A plate is read left-to-right even when it
+    is written in an RTL script — that is exactly what ``read_order: ltr`` in
+    ``configs/countries/ir.yaml`` records. Running ``12 ب 345 | ایران 11``
+    through the bidi algorithm with an RTL base direction reorders the numeric
+    runs and renders it as ``345 ب 12``: a wrong plate, drawn confidently onto
+    the video. Forcing an LTR base keeps the groups in plate order while still
+    reversing the Arabic segments internally, which is what reshaped Arabic
+    needs.
+
+    Pass ``base_dir="R"`` for prose, not for plates.
 
     Returns the text unchanged when ``arabic-reshaper`` / ``python-bidi`` are
     not installed, so rendering degrades instead of crashing.
     """
     try:  # pragma: no cover - optional dependency
         import arabic_reshaper
-        from bidi.algorithm import get_display
-
-        return get_display(arabic_reshaper.reshape(text))
     except Exception:  # pragma: no cover - optional dependency
         return text
+
+    if base_dir == "R":
+        # Prose: the full bidi algorithm is exactly right.
+        try:  # pragma: no cover - optional dependency
+            try:
+                from bidi import get_display  # python-bidi >= 0.5
+            except ImportError:
+                from bidi.algorithm import get_display  # python-bidi < 0.5
+            return get_display(arabic_reshaper.reshape(text))
+        except Exception:  # pragma: no cover - optional dependency
+            return text
+
+    # Plate mode: reorder *within* each Arabic run only, leaving the overall
+    # left-to-right sequence of groups exactly as the layout composed it.
+    # Running the whole mixed string through bidi — even with an LTR base —
+    # moves the digit runs around the Arabic word and silently renders a
+    # different plate.
+    def _flip(match: re.Match[str]) -> str:
+        return arabic_reshaper.reshape(match.group(0))[::-1]
+
+    return _ARABIC_RUN.sub(_flip, text)
 
 
 def has_rtl(text: str) -> bool:

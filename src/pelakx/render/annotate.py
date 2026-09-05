@@ -91,11 +91,16 @@ class Annotator:
         font: path to a TTF; auto-detected when omitted.
         font_size: label text size in pixels.
         thickness: box line thickness.
+        base_dir: bidi paragraph direction; "L" for plates (they read
+            left-to-right even in an RTL script), "R" for prose.
     """
 
     font: str | None = None
     font_size: int = 18
     thickness: int = 2
+    #: paragraph direction for shaped text. "L" (the default) keeps a plate's
+    #: groups in reading order; see pelakx.grammar.normalize.shape_rtl.
+    base_dir: str = "L"
     _font_path: str | None = None
     _pil_ok: bool = True
 
@@ -163,7 +168,7 @@ class Annotator:
     def _label_pil(self, frame, text, anchor, color, text_color, above) -> None:  # pragma: no cover
         from PIL import Image, ImageDraw
 
-        shaped = shape_rtl(text)
+        shaped = shape_rtl(text, self.base_dir)
         font = _pil_font(self._font_path, self.font_size)
         image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
         draw = ImageDraw.Draw(image)

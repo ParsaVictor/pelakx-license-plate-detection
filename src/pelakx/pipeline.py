@@ -167,7 +167,10 @@ class Pipeline:
             self.spec,
             max_distance=self.config.analytics.watchlist_max_distance,
         )
-        self.annotator = Annotator(font=self.config.output.font)
+        self.annotator = Annotator(
+            font=self.config.output.font,
+            base_dir="R" if self.spec.read_order == "rtl" else "L",
+        )
         self.faces = FaceBlurrer() if self.config.privacy.blur_faces else None
 
         self.tracks: dict[int, TrackRecord] = {}
