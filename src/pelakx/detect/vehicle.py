@@ -21,6 +21,7 @@ from typing import Any
 import numpy as np
 
 from pelakx.detect.base import BaseDetector, DetectorUnavailable, boxes_from_ultralytics
+from pelakx.runtime import resolve_device
 from pelakx.types import Detection
 
 #: COCO class ids that count as vehicles
@@ -45,7 +46,7 @@ class VehicleDetector(BaseDetector):
         conf: confidence threshold.
         iou: NMS IoU threshold (ignored by end-to-end YOLO26 heads).
         imgsz: inference resolution.
-        device: ``cpu``, ``0``, ``cuda:0``, ``mps``…
+        device: ``auto`` (CUDA -> MPS -> CPU), or force ``cpu`` / ``cuda:0`` / ``mps``.
         classes: COCO class ids to keep; ``None`` keeps every vehicle class.
         tracker: Ultralytics tracker config — ``bytetrack.yaml`` (fast) or
             ``botsort.yaml`` (better through occlusions, slower).
@@ -65,7 +66,7 @@ class VehicleDetector(BaseDetector):
         conf: float = 0.30,
         iou: float = 0.50,
         imgsz: int = 640,
-        device: str = "cpu",
+        device: str = "auto",
         classes: tuple[int, ...] | None = DEFAULT_VEHICLE_CLASSES,
         tracker: str = "bytetrack.yaml",
         half: bool = False,
@@ -77,7 +78,7 @@ class VehicleDetector(BaseDetector):
         self.conf = conf
         self.iou = iou
         self.imgsz = imgsz
-        self.device = device
+        self.device = resolve_device(device)
         self.classes = list(classes) if classes else None
         self.tracker = tracker
         self.half = half

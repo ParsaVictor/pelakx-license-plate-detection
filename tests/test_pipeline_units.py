@@ -277,9 +277,17 @@ def test_confusable_swaps_are_cheaper_than_real_edits():
 # ---------------------------------------------------------------------------
 def test_hash_is_stable_and_salt_dependent():
     salt_a, salt_b = generate_salt(), generate_salt()
-    assert hash_plate("12ب34511", salt_a) == hash_plate("12ب34511", salt_a)
-    assert hash_plate("12ب34511", salt_a) != hash_plate("12ب34511", salt_b)
-    assert "12" not in hash_plate("12ب34511", salt_a)
+    digest = hash_plate("12ب34511", salt_a)
+    # same plate + same salt -> same pseudonym, so vehicles stay linkable
+    assert digest == hash_plate("12ب34511", salt_a)
+    # different salt -> different pseudonym, so deployments cannot be joined
+    assert digest != hash_plate("12ب34511", salt_b)
+    # different plate -> different pseudonym
+    assert digest != hash_plate("34د56722", salt_a)
+    # the plate itself is gone: the output is `px_` + hex only
+    assert digest.startswith("px_")
+    assert all(c in "0123456789abcdef" for c in digest[3:])
+    assert "ب" not in digest
 
 
 def test_hash_requires_a_salt():
@@ -381,3 +389,75 @@ def test_csv_writer_writes_a_header_and_rows(tmp_path, ir):
 )
 def test_region_to_code(region, expected):
     assert region_to_code(region) == expected
+
+
+# ---------------------------------------------------------------------------
+# device resolution
+# ---------------------------------------------------------------------------
+def test_resolve_device_passes_explicit_values_through():
+    from pelakx.runtime import resolve_device
+
+    for explicit in ("cpu", "cuda:0", "cuda:1", "mps", "0,1"):
+        assert resolve_device(explicit) == explicit
+
+
+def test_resolve_device_auto_returns_something_usable():
+    from pelakx.runtime import resolve_device
+
+    for value in ("auto", "", None, "AUTO", "  auto  "):
+        resolved = resolve_device(value)
+        assert resolved.startswith(("cpu", "cuda", "mps")) or resolved.isdigit()
+
+
+def test_env_override_wins(monkeypatch):
+    from pelakx import runtime
+
+    monkeypatch.setenv("PELAKX_DEVICE", "cuda:3")
+    runtime.clear_cache()
+    try:
+        assert runtime.resolve_device("auto") == "cuda:3"
+        assert runtime.is_gpu("auto")
+        assert "cuda:3" in runtime.describe_device("auto")
+    finally:
+        monkeypatch.delenv("PELAKX_DEVICE", raising=False)
+        runtime.clear_cache()
+
+
+def test_is_gpu_classifies_correctly():
+    from pelakx.runtime import is_gpu
+
+    assert is_gpu("cuda:0") and is_gpu("mps") and is_gpu("0")
+    assert not is_gpu("cpu")
+
+
+def test_describe_device_labels_explicit_vs_auto():
+    from pelakx.runtime import describe_device
+
+    assert "explicit" in describe_device("cpu")
+    assert "auto" in describe_device("auto")
+
+
+def test_config_defaults_to_auto_device():
+    cfg = PipelineConfig()
+    assert cfg.vehicle.device == "auto"
+    assert cfg.plate.device == "auto"
+
+
+# ---------------------------------------------------------------------------
+# run summary timing
+# ---------------------------------------------------------------------------
+def test_stage_ms_per_frame_is_sorted_and_normalised():
+    from pelakx.pipeline import RunSummary
+
+    summary = RunSummary(frames_processed=10)
+    summary.stage_seconds = {"ocr": 2.0, "vehicle+track": 5.0, "grammar": 0.01}
+    per_frame = summary.stage_ms_per_frame()
+    assert list(per_frame) == ["vehicle+track", "ocr", "grammar"]  # slowest first
+    assert per_frame["vehicle+track"] == pytest.approx(500.0)  # 5 s / 10 frames
+
+
+def test_ocr_savings_reports_gate_effectiveness():
+    from pelakx.pipeline import RunSummary
+
+    assert RunSummary(ocr_calls=30, crops_gated=70).ocr_savings == pytest.approx(0.7)
+    assert RunSummary().ocr_savings == 0.0

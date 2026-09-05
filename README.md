@@ -90,9 +90,14 @@ matched, the province validated — all from a YAML file.
 pelakx run traffic.mp4 --country IR          # Persian plates
 pelakx run traffic.mp4 --country GB          # UK plates
 pelakx run traffic.mp4 --country auto        # let PelakX work out the country
+pelakx bench traffic.mp4                     # can this machine keep up? where does the time go?
 pelakx search "12ب*"                         # query the results afterwards
 pelakx dashboard                             # explore them visually
 ```
+
+Prefer a notebook? [`notebooks/PelakX_Quickstart.ipynb`](notebooks/PelakX_Quickstart.ipynb)
+walks through every layer with runnable cells — the first four sections need no
+models and no video.
 
 A real run on 131 frames of dashcam footage, **CPU only, no GPU**:
 
@@ -120,7 +125,7 @@ A real run on 131 frames of dashcam footage, **CPU only, no GPU**:
 | Fixes OCR confusions | ❌ | ✅ bounded, priced `O↔0`, `ك↔ک` repair |
 | Result per frame or per vehicle | per frame (flickers) | ✅ **per vehicle**, character-level temporal vote |
 | Wastes OCR on unreadable crops | ✅ | ❌ quality gate skips them (typically 40–70%) |
-| Auto-detect issuing country | ❌ | ✅ `--country auto` |
+| Auto-detect issuing country | ❌ | ✅ `--country auto` across all 12 grammars |
 | Speed estimation | pixels/frame 🙃 | ✅ homography-calibrated, or **not reported at all** |
 | Right-to-left text on video | mojibake | ✅ reshaped + bidi, real glyphs |
 | Privacy mode | ❌ | ✅ one flag: pixelated plates, salted-HMAC pseudonyms |
@@ -142,6 +147,17 @@ pelakx countries          # list them
 pelakx countries IR       # layouts, letter meanings, engine chain
 pelakx new-country PK     # scaffold your own
 ```
+
+**One country or all of them.** Naming a country is the default and the cheaper
+path — only that grammar is consulted. `--country auto` opts every one of the
+12 into competing for each reading, and uses the OCR engine's own region guess
+only to break ties. Prefer a fixed country whenever you know it: a tighter
+alphabet means fewer ways for OCR to be wrong, which is worth more than the
+compute it saves.
+
+> Auto runs **one** OCR engine over every crop, so it works within a script
+> (Latin plates across Europe), not across them. For a mixed-script site, run
+> one pipeline per camera.
 
 Grammars live in `configs/countries/*.yaml` and are also loaded from
 `~/.pelakx/countries/` and `$PELAKX_COUNTRIES` — **a country PR touches no Python
@@ -208,6 +224,40 @@ pelakx doctor        # what is installed, what is missing, and the exact fix
 pelakx engines       # OCR engines and their availability
 ```
 
+### Device selection
+
+`device: auto` is the default and resolves at startup — **CUDA → MPS → CPU** —
+so one config file runs on a workstation and on a fanless camera box. Override
+with `--device cpu` / `--device cuda:1`, or globally with `PELAKX_DEVICE`.
+`pelakx doctor` prints what it picked and why.
+
+### Speed, measured rather than claimed
+
+Vehicle detector only, 1280×720 footage, 8-core CPU, no GPU. 30 frames × 3
+passes with the variants **interleaved frame by frame**, so background load
+hits all of them equally; median reported.
+
+| vehicle backbone | median ms | fps | vs baseline | avg detections |
+|---|---|---|---|---|
+| PyTorch, imgsz 640 | 111.9 | 8.9 | 1.00× | 7.7 |
+| **ONNX, imgsz 640** | **75.7** | **13.2** | **1.48×** | 7.6 |
+| PyTorch, imgsz 416 | 85.1 | 11.7 | 1.31× | 4.9 |
+| **ONNX, imgsz 416** | **35.5** | **28.2** | **3.15×** | 5.0 |
+
+Two things to read off that:
+
+* **ONNX export is accuracy-neutral speed** — 1.48× at imgsz 640 with the same
+  detections (7.6 vs 7.7 is noise). `pelakx export` does it in one command.
+* **Dropping `imgsz` is not free** — 640 → 416 lost a third of the detections
+  on this far-field footage. Measure it against *your* camera before shipping.
+
+End-to-end on that scene: **5–7 fps** out of the box, **12–15 fps** with ONNX
+plus `frame_stride: 2`. A 25 fps camera is comfortably handled at stride 2–3 —
+sampling every frame of a vehicle that is in view for three seconds buys
+nothing the temporal vote does not already have.
+
+`pelakx bench <video>` prints this breakdown for your own footage and hardware.
+
 ---
 
 ## Privacy
@@ -237,6 +287,8 @@ Counting, speed and watchlist matching all keep working.
 |---|---|
 | `pelakx run <source>` | process a video / RTSP / webcam end to end |
 | `pelakx parse <text>` | run the grammar engine on a string — no models needed |
+| `pelakx bench <source>` | throughput + a per-stage millisecond breakdown |
+| `pelakx export` | export the detector to ONNX (~25% faster on CPU, same accuracy) |
 | `pelakx search <query>` | query a previous run's SQLite (`"12ب*"`, `--min-speed 90`) |
 | `pelakx countries [CODE]` | list or inspect plate grammars |
 | `pelakx engines` | OCR engines and whether they are installed |

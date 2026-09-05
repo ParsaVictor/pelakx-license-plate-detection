@@ -27,7 +27,9 @@ is known with high confidence, PelakX stops paying for OCR on it.
 from __future__ import annotations
 
 import time
+from collections import defaultdict
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -46,7 +48,14 @@ from pelakx.privacy import FaceBlurrer, blur_region, hash_plate
 from pelakx.quality import QualityGate, crop_bbox, enhance, rectify
 from pelakx.render import Annotator, plate_color
 from pelakx.store import CsvWriter, EventStore, JsonlWriter
-from pelakx.types import BBox, Detection, PlateObservation, TrackRecord, VehicleEvent
+from pelakx.types import (
+    BBox,
+    Detection,
+    PlateObservation,
+    RawRead,
+    TrackRecord,
+    VehicleEvent,
+)
 
 
 @dataclass(slots=True)
@@ -67,6 +76,9 @@ class RunSummary:
     line_counts: dict[str, dict[str, int]] = field(default_factory=dict)
     speed: dict[str, Any] = field(default_factory=dict)
     outputs: dict[str, str] = field(default_factory=dict)
+    #: cumulative seconds per stage, and how many times each ran
+    stage_seconds: dict[str, float] = field(default_factory=dict)
+    stage_calls: dict[str, int] = field(default_factory=dict)
 
     @property
     def fps(self) -> float:
@@ -77,6 +89,12 @@ class RunSummary:
         """Fraction of candidate crops that never reached the OCR engine."""
         total = self.ocr_calls + self.crops_gated
         return self.crops_gated / total if total else 0.0
+
+    def stage_ms_per_frame(self) -> dict[str, float]:
+        """Milliseconds each stage costs per processed frame, slowest first."""
+        n = max(1, self.frames_processed)
+        out = {k: v * 1000.0 / n for k, v in self.stage_seconds.items()}
+        return dict(sorted(out.items(), key=lambda kv: -kv[1]))
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -95,6 +113,7 @@ class RunSummary:
             "line_counts": self.line_counts,
             "speed": self.speed,
             "outputs": self.outputs,
+            "stage_ms_per_frame": {k: round(v, 2) for k, v in self.stage_ms_per_frame().items()},
         }
 
 
@@ -132,6 +151,7 @@ class Pipeline:
         )
         self.plates = build_plate_detector(
             self.config.plate.weights,
+            model=self.config.plate.model,
             conf=self.config.plate.conf,
             device=self.config.plate.device,
             imgsz=self.config.plate.imgsz,
@@ -180,7 +200,36 @@ class Pipeline:
         self._pending: list[VehicleEvent] = []
         #: where to save the best plate crop per track (set by `run`)
         self._crops_dir: Path | None = None
+        self._stage_seconds: dict[str, float] = defaultdict(float)
+        self._stage_calls: dict[str, int] = defaultdict(int)
         self.summary = RunSummary(country="AUTO" if self.auto else self.spec.code)
+
+    def warmup(self) -> None:
+        """Load every model and run one dummy pass through each.
+
+        Called before the throughput timer starts, because loading a CRNN off
+        disk is a one-time startup cost, not a per-frame cost — folding it into
+        the average makes a short benchmark look several times slower than the
+        steady state it is trying to measure.
+        """
+        self.vehicles.warmup((self.config.vehicle.imgsz, self.config.vehicle.imgsz))
+        self.plates.warmup((384, 384))
+        self.ocr.warmup()
+
+    @contextmanager
+    def _stage(self, name: str):
+        """Accumulate wall time for one pipeline stage.
+
+        Two `perf_counter` calls per stage per frame is noise next to a YOLO
+        forward pass, and knowing *which* stage costs the frame budget is the
+        only way to tune a CPU deployment honestly.
+        """
+        started = time.perf_counter()
+        try:
+            yield
+        finally:
+            self._stage_seconds[name] += time.perf_counter() - started
+            self._stage_calls[name] += 1
 
     # ------------------------------------------------------------------
     # frame processing
@@ -189,8 +238,20 @@ class Pipeline:
         self, frame: np.ndarray, frame_index: int, timestamp: float, *, annotate: bool = True
     ) -> np.ndarray:
         """Run every stage on one frame; returns the (optionally) annotated frame."""
-        detections = self.vehicles.track(frame)
+        with self._stage("vehicle+track"):
+            detections = self.vehicles.track(frame)
         seen_now: set[int] = set()
+
+        # Two ways to find plates, and the right one depends on the scene.
+        # Per-vehicle (default) searches a ~95% smaller area per call but costs
+        # one detector call *per vehicle*; on a busy road that is 5-10 calls a
+        # frame. `standalone_plates` runs the detector once over the whole
+        # frame and assigns each plate to the vehicle containing it — a big win
+        # once the scene is crowded, at the cost of recall on small plates.
+        frame_plates: list[Detection] | None = None
+        if self.config.vehicle.standalone_plates:
+            with self._stage("plate detect"):
+                frame_plates = self._plausible_plates(self.plates.detect(frame))
 
         for det in detections:
             if det.track_id is None:
@@ -206,10 +267,11 @@ class Pipeline:
             if kmh is not None:
                 track.speed_kmh = kmh
 
-            self._read_plates_for(frame, det, track, frame_index, timestamp)
+            self._read_plates_for(frame, det, track, frame_index, timestamp, frame_plates)
 
         if annotate:
-            frame = self._annotate(frame, detections, timestamp)
+            with self._stage("annotate"):
+                frame = self._annotate(frame, detections, timestamp)
 
         self._expire_tracks(timestamp, keep=seen_now)
         return frame
@@ -246,6 +308,11 @@ class Pipeline:
         last = self._last_ocr.get(track_id)
         return last is None or (timestamp - last) >= 1.0 / cfg.max_reads_per_second
 
+    def _plausible_plates(self, detections: list[Detection]) -> list[Detection]:
+        """Drop candidates whose shape could not be a plate."""
+        lo, hi = self.config.plate.aspect_range
+        return [d for d in detections if lo <= d.bbox.aspect_ratio <= hi]
+
     def _read_plates_for(
         self,
         frame: np.ndarray,
@@ -253,8 +320,14 @@ class Pipeline:
         track: TrackRecord,
         frame_index: int,
         timestamp: float,
+        frame_plates: list[Detection] | None = None,
     ) -> None:
-        """Find, gate and read the plate belonging to one tracked vehicle."""
+        """Find, gate and read the plate belonging to one tracked vehicle.
+
+        When `frame_plates` is given, plates were already detected once over
+        the whole frame and are only assigned here; otherwise the detector runs
+        inside this vehicle's box.
+        """
         if not self._should_read(vehicle.track_id, timestamp):
             return
 
@@ -262,22 +335,30 @@ class Pipeline:
         cfg = self.config.plate
         if max(vehicle.bbox.width, vehicle.bbox.height) < cfg.min_vehicle_px:
             return
-        region = vehicle.bbox.pad(cfg.vehicle_pad, w, h)
-        rx1, ry1, rx2, ry2 = region.as_int()
-        if rx2 - rx1 < 24 or ry2 - ry1 < 24:
-            return
-        sub = frame[ry1:ry2, rx1:rx2]
-        if sub.size == 0:
-            return
 
-        lo, hi = cfg.aspect_range
-        candidates = [d for d in self.plates.detect(sub) if lo <= d.bbox.aspect_ratio <= hi]
-        if not candidates:
-            return
-        best = max(candidates, key=lambda d: d.confidence)
-        plate_box = BBox(
-            best.bbox.x1 + rx1, best.bbox.y1 + ry1, best.bbox.x2 + rx1, best.bbox.y2 + ry1
-        ).clip(w, h)
+        if frame_plates is not None:
+            owned = [d for d in frame_plates if vehicle.bbox.contains_center_of(d.bbox)]
+            if not owned:
+                return
+            best = max(owned, key=lambda d: d.confidence)
+            plate_box = best.bbox.clip(w, h)
+        else:
+            region = vehicle.bbox.pad(cfg.vehicle_pad, w, h)
+            rx1, ry1, rx2, ry2 = region.as_int()
+            if rx2 - rx1 < 24 or ry2 - ry1 < 24:
+                return
+            sub = frame[ry1:ry2, rx1:rx2]
+            if sub.size == 0:
+                return
+            with self._stage("plate detect"):
+                found = self.plates.detect(sub)
+            candidates = self._plausible_plates(found)
+            if not candidates:
+                return
+            best = max(candidates, key=lambda d: d.confidence)
+            plate_box = BBox(
+                best.bbox.x1 + rx1, best.bbox.y1 + ry1, best.bbox.x2 + rx1, best.bbox.y2 + ry1
+            ).clip(w, h)
 
         observation = PlateObservation(
             frame_index=frame_index,
@@ -298,7 +379,8 @@ class Pipeline:
             return
 
         if self.config.quality.enabled:
-            report = self.gate.score(raw_crop)
+            with self._stage("quality gate"):
+                report = self.gate.score(raw_crop)
             observation.quality = report.score
             if not report.passed:
                 self.summary.crops_gated += 1
@@ -306,11 +388,12 @@ class Pipeline:
         else:
             observation.quality = 1.0
 
-        crop = raw_crop
-        if self.config.quality.rectify:
-            crop = rectify(crop)
-        if self.config.quality.enhance:
-            crop = enhance(crop, target_height=self.config.quality.ocr_height)
+        with self._stage("crop prep"):
+            crop = raw_crop
+            if self.config.quality.rectify:
+                crop = rectify(crop)
+            if self.config.quality.enhance:
+                crop = enhance(crop, target_height=self.config.quality.ocr_height)
         if crop.size == 0:
             return
 
@@ -321,35 +404,46 @@ class Pipeline:
             track.meta["best_quality"] = observation.quality
             track.meta["best_crop"] = crop.copy()
 
-        raw = self.ocr.read(crop, self.spec)
+        with self._stage("ocr"):
+            raw = self.ocr.read(crop, self.spec)
         self.summary.ocr_calls += 1
         self._last_ocr[vehicle.track_id] = timestamp
         if raw is None:
             return
         observation.raw = raw
 
+        with self._stage("grammar"):
+            read = self._parse_reading(raw)
+        if read is None:
+            return
+
+        observation.read = read
+        self.summary.plates_read += 1
+        self.voters.add(
+            vehicle.track_id, read, quality=observation.quality, frame_index=frame_index
+        )
+
+    def _parse_reading(self, raw: RawRead):
+        """Turn one OCR reading into a validated :class:`PlateRead`.
+
+        Single country: match that grammar, keeping unparseable text visible
+        (``valid=False``). Auto: let every grammar compete, using the engine's
+        own region guess only as a tie-break.
+        """
         if self.auto:
-            read = identify_country(
+            return identify_country(
                 raw.text,
                 self.specs,
                 ocr_confidence=raw.confidence,
                 engine=raw.engine,
                 hint=region_to_code(raw.region),
             )
-        else:
-            read = parse(
-                raw.text,
-                self.spec,
-                ocr_confidence=raw.confidence,
-                engine=raw.engine,
-                repair_budget=self.config.ocr.repair_budget,
-            )
-        if read is None:
-            return
-        observation.read = read
-        self.summary.plates_read += 1
-        self.voters.add(
-            vehicle.track_id, read, quality=observation.quality, frame_index=frame_index
+        return parse(
+            raw.text,
+            self.spec,
+            ocr_confidence=raw.confidence,
+            engine=raw.engine,
+            repair_budget=self.config.ocr.repair_budget,
         )
 
     # ------------------------------------------------------------------
@@ -523,6 +617,10 @@ class Pipeline:
         stride = max(1, self.config.frame_stride)
         self.summary.source = str(source)
 
+        # Models load here, outside the timer, so `fps` measures the pipeline
+        # rather than the first frame's cold start.
+        self.warmup()
+
         index = 0
         processed = 0
         started = time.perf_counter()
@@ -546,6 +644,8 @@ class Pipeline:
         finally:
             capture.release()
             self.summary.elapsed = time.perf_counter() - started
+            self.summary.stage_seconds = dict(self._stage_seconds)
+            self.summary.stage_calls = dict(self._stage_calls)
 
     def _drain(self) -> list[VehicleEvent]:
         """Take everything finalized since the last call."""

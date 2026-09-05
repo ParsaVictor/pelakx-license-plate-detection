@@ -21,6 +21,17 @@ vehicle:
   tracker: bytetrack.yaml   # bytetrack.yaml (fast) | botsort.yaml (better occlusion handling)
   half: false               # FP16, CUDA only
 
+  # Where to look for plates.
+  #   false (default) — once per *vehicle*: ~95% smaller search area per call,
+  #                     best recall on small/distant plates, but N calls a frame.
+  #   true            — once per *frame*, then assign each plate to the vehicle
+  #                     containing it: 1 call a frame.
+  # Measured on 1280x720 footage with ~20 vehicles in view, CPU only:
+  #   false -> 2.3 fps, plate detection 268 ms/frame over 327 calls
+  #   true  -> 5.2 fps, plate detection  56 ms/frame over  60 calls
+  # Crowded scene => turn this on. Run `pelakx bench` on your own footage.
+  standalone_plates: false
+
 # --- plate detection --------------------------------------------------------
 plate:
   weights: null             # null = auto (models/license_plate.pt, else the ONNX detector)

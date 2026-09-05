@@ -25,7 +25,8 @@ class VehicleConfig:
     conf: float = 0.30
     iou: float = 0.50
     imgsz: int = 640
-    device: str = "cpu"
+    #: "auto" picks CUDA -> MPS -> CPU; or force "cpu", "cuda:0", "cuda:1", "mps"
+    device: str = "auto"
     classes: tuple[int, ...] = (2, 3, 5, 7)  # car, motorcycle, bus, truck
     tracker: str = "bytetrack.yaml"
     half: bool = False
@@ -39,9 +40,12 @@ class PlateConfig:
     """Plate detector."""
 
     weights: str | None = None  # None -> auto-select (see detect.plate.build)
+    #: ONNX detector name when `weights` is None. Bigger input = smaller
+    #: plates found, at a proportional CPU cost. See detect.plate.OnnxPlateDetector.
+    model: str | None = None
     conf: float = 0.25
     imgsz: int = 640
-    device: str = "cpu"
+    device: str = "auto"
     #: pad the vehicle box before searching for a plate inside it
     vehicle_pad: float = 0.02
     #: skip vehicles smaller than this (px, longest side). A 60px car cannot

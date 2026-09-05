@@ -213,20 +213,24 @@ def doctor() -> None:
         table.add_row(module, _ok(importlib.util.find_spec(module) is not None), purpose)
     console.print(table)
 
-    # torch / GPU
+    # torch / accelerator
+    from pelakx.runtime import describe_device, is_gpu
+
+    resolved = describe_device("auto")
+    console.print(f"\ndevice (`device: auto`) resolves to: [bold]{resolved}[/bold]")
     try:
         import torch
 
-        cuda = torch.cuda.is_available()
-        device = torch.cuda.get_device_name(0) if cuda else "CPU only"
-        console.print(f"\ntorch {torch.__version__} · CUDA: {_ok(cuda)} · device: {device}")
-        if not cuda:
-            console.print(
-                "[dim]  CPU-only is fine — use yolo26n and the ONNX engines; "
-                "see docs/MODELS.md for the CPU profile.[/dim]"
-            )
+        console.print(
+            f"torch {torch.__version__} · CUDA available: {_ok(torch.cuda.is_available())}"
+        )
     except ImportError:
-        console.print("\n[yellow]torch not installed — detection is unavailable[/yellow]")
+        console.print("[yellow]torch not installed — detection is unavailable[/yellow]")
+    if not is_gpu("auto"):
+        console.print(
+            "[dim]  CPU-only is fine and is the default target — yolo26n plus the ONNX "
+            "engines. Run `pelakx bench <video>` to see the frame budget.[/dim]"
+        )
 
     console.print(
         f"\ncountry grammars: [bold]{len(registry.codes())}[/bold] ({', '.join(registry.codes())})"
@@ -261,7 +265,13 @@ def run(
     engine: str | None = typer.Option(None, "--engine", help="Force an OCR engine."),
     vehicle_weights: str | None = typer.Option(None, "--vehicle-weights"),
     plate_weights: str | None = typer.Option(None, "--plate-weights"),
-    device: str | None = typer.Option(None, "--device", help="cpu, cuda:0, mps…"),
+    device: str | None = typer.Option(None, "--device", help="auto (default) | cpu | cuda:0 | mps"),
+    standalone_plates: bool = typer.Option(
+        False,
+        "--standalone-plates",
+        help="Detect plates once per frame instead of once per vehicle. "
+        "Much faster on crowded scenes; run `pelakx bench` to compare.",
+    ),
     stride: int | None = typer.Option(None, "--stride", help="Process every Nth frame."),
     max_frames: int | None = typer.Option(None, "--max-frames"),
     no_video: bool = typer.Option(False, "--no-video", help="Skip writing annotated video."),
@@ -281,6 +291,8 @@ def run(
     overrides: dict[str, object] = {"country": country.upper()}
     if out is not None:
         overrides["output.dir"] = str(out)
+    if standalone_plates:
+        overrides["vehicle.standalone_plates"] = True
     if engine:
         overrides["ocr.engine"] = engine
     if vehicle_weights:
@@ -290,6 +302,8 @@ def run(
     if device:
         overrides["vehicle.device"] = device
         overrides["plate.device"] = device
+    if standalone_plates:
+        overrides["vehicle.standalone_plates"] = True
     if stride:
         overrides["frame_stride"] = stride
     if max_frames:
@@ -392,6 +406,174 @@ def _print_summary(summary) -> None:
         console.print("\n[bold]outputs[/bold]")
         for kind, path in summary.outputs.items():
             console.print(f"  {kind:<7} {path}")
+
+
+# ---------------------------------------------------------------------------
+@app.command()
+def export(
+    weights: str = typer.Option("yolo26n.pt", "--weights", "-w", help="Ultralytics weights."),
+    imgsz: int = typer.Option(640, "--imgsz", help="Fixed input size to bake in."),
+    fmt: str = typer.Option("onnx", "--format", help="onnx | openvino | engine | coreml"),
+    out: Path = typer.Option(Path("models"), "--out", help="Where to put the exported file."),
+    simplify: bool = typer.Option(
+        False, "--simplify", help="Run onnxslim (can be slow, and crashes on some setups)."
+    ),
+) -> None:
+    """Export the vehicle detector for faster CPU inference.
+
+    Measured on this project's 1280x720 test footage, median over 40 frames on
+    an 8-core CPU — identical detections, just faster:
+
+        PyTorch 640    105 ms      ONNX 640     79 ms   (-25%)
+        PyTorch 416     81 ms      ONNX 416     38 ms   (-53%)
+
+    Then point PelakX at the result:
+
+        pelakx run traffic.mp4 --vehicle-weights models/yolo26n_640.onnx
+
+    Note: Ultralytics auto-installs missing export dependencies and that can
+    upgrade numpy underneath you. This command disables that; install `onnx`
+    yourself if it complains.
+    """
+    import os
+
+    os.environ.setdefault("YOLO_AUTOINSTALL", "false")
+    try:
+        from ultralytics import YOLO
+    except ImportError:
+        console.print("[red]ultralytics is not installed[/red] — pip install 'pelakx[detect]'")
+        raise typer.Exit(code=1) from None
+
+    out.mkdir(parents=True, exist_ok=True)
+    console.print(f"exporting {weights} to {fmt} at imgsz={imgsz} …")
+    produced = YOLO(weights).export(
+        format=fmt, imgsz=imgsz, dynamic=False, simplify=simplify, opset=17
+    )
+    source = Path(produced)
+    stem = Path(weights).stem
+    target = out / f"{stem}_{imgsz}{source.suffix}"
+    if source.resolve() != target.resolve():
+        if target.exists():
+            target.unlink()
+        source.replace(target)
+    size = target.stat().st_size / 1e6 if target.is_file() else 0.0
+    console.print(f"[green]ready[/green] {target}  ({size:.1f} MB)")
+    console.print(f"\n  pelakx bench <video> --vehicle-weights {target} --imgsz {imgsz}")
+    console.print(f"  pelakx run   <video> --vehicle-weights {target}")
+
+
+# ---------------------------------------------------------------------------
+@app.command()
+def bench(
+    source: str = typer.Argument(..., help="Video file to benchmark against."),
+    country: str = typer.Option("IR", "--country", "-c"),
+    frames: int = typer.Option(60, "--frames", "-n", help="Frames to process."),
+    device: str | None = typer.Option(None, "--device", help="auto | cpu | cuda:0 | mps"),
+    stride: int = typer.Option(1, "--stride"),
+    standalone_plates: bool = typer.Option(
+        False, "--standalone-plates", help="One plate pass per frame instead of per vehicle."
+    ),
+    engine: str | None = typer.Option(None, "--engine"),
+    vehicle_weights: str | None = typer.Option(None, "--vehicle-weights"),
+    imgsz: int | None = typer.Option(None, "--imgsz"),
+) -> None:
+    """Measure throughput and show where the frame budget actually goes.
+
+    Answers the only question that matters for a camera deployment: can this
+    machine keep up with this stream, and if not, which stage is eating it.
+
+        pelakx bench traffic.mp4 --country IR -n 100
+    """
+    import cv2
+
+    from pelakx.config import PipelineConfig
+    from pelakx.pipeline import Pipeline
+    from pelakx.runtime import describe_device
+
+    capture = cv2.VideoCapture(source)
+    if not capture.isOpened():
+        console.print(f"[red]could not open {source}[/red]")
+        raise typer.Exit(code=1)
+    src_fps = capture.get(cv2.CAP_PROP_FPS) or 25.0
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    capture.release()
+
+    overrides: dict[str, object] = {
+        "country": country.upper(),
+        "max_frames": frames,
+        "frame_stride": stride,
+        "output.video": False,
+        "output.csv": False,
+        "output.sqlite": False,
+        "output.crops": False,
+    }
+    if device:
+        overrides["vehicle.device"] = device
+        overrides["plate.device"] = device
+    if engine:
+        overrides["ocr.engine"] = engine
+    if vehicle_weights:
+        overrides["vehicle.weights"] = vehicle_weights
+    if imgsz:
+        overrides["vehicle.imgsz"] = imgsz
+
+    cfg = PipelineConfig().merged(**overrides)
+    pipeline = Pipeline(cfg)
+    budget_ms = 1000.0 / max(1.0, src_fps) * stride
+
+    console.print(
+        Panel(
+            f"source   {source}  ({width}x{height} @ {src_fps:.0f} fps)\n"
+            f"device   {describe_device(cfg.vehicle.device)}\n"
+            f"models   {cfg.vehicle.weights} + {type(pipeline.plates).__name__}"
+            f" + {pipeline.ocr.id}\n"
+            f"budget   {budget_ms:.0f} ms per processed frame to keep up at stride {stride}",
+            title="benchmark",
+            border_style="cyan",
+        )
+    )
+    with console.status("running..."):
+        summary = pipeline.run(source, write_outputs=False)
+
+    achieved = summary.fps
+    needed = src_fps / max(1, stride)
+    if achieved >= needed:
+        console.print(
+            f"\n[green]REAL TIME[/green] — {achieved:.1f} fps processed, {needed:.1f} fps needed"
+        )
+    else:
+        console.print(
+            f"\n[yellow]NOT real time[/yellow] — {achieved:.1f} fps processed, "
+            f"{needed:.1f} fps needed"
+        )
+        if achieved > 0:
+            suggested = max(1, int(round(src_fps / achieved)))
+            console.print(
+                f"[dim]  --stride {suggested} would keep up: PelakX samples every "
+                f"{suggested} frames, and a vehicle stays in frame for dozens.[/dim]"
+            )
+
+    table = Table(title="where the frame budget goes", box=None)
+    table.add_column("stage", style="cyan")
+    table.add_column("ms / frame", justify="right")
+    table.add_column("share", justify="right")
+    table.add_column("calls", justify="right")
+    per_frame = summary.stage_ms_per_frame()
+    total_ms = sum(per_frame.values()) or 1.0
+    for name, ms in per_frame.items():
+        table.add_row(
+            name, f"{ms:.1f}", f"{ms / total_ms:.0%}", str(summary.stage_calls.get(name, 0))
+        )
+    if achieved:
+        table.add_row("[dim]measured total[/dim]", f"[dim]{1000.0 / achieved:.1f}[/dim]", "", "")
+    console.print(table)
+
+    console.print(
+        f"\nvehicles={summary.vehicles}  reads={summary.plates_read}  "
+        f"ocr_calls={summary.ocr_calls}  gated={summary.crops_gated} "
+        f"({summary.ocr_savings:.0%})"
+    )
 
 
 # ---------------------------------------------------------------------------

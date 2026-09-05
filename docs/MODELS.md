@@ -33,12 +33,51 @@ CPU ONNX** (56.1 ms → 38.9 ms on an Intel Xeon). On a GPU the gap is small
 enough that either generation is fine; on CPU it is the difference between
 real-time and not.
 
+> That 43% is YOLO26n **versus YOLO11n**, both exported to ONNX. It is *not*
+> a PyTorch-versus-ONNX figure — that is a separate win, measured below, and
+> the two stack.
+
+### Measured on this repo's own footage
+
+Vehicle detector only, 1280×720, ~20 vehicles in view, 8-core CPU, no GPU.
+
+**Method matters here.** A first attempt ran each variant back to back and
+produced numbers that moved by 40% between runs — the machine simply had
+different background load at different moments. These figures come from 30
+frames × 3 passes with the variants **interleaved frame by frame**, so drift
+hits every variant equally. Median reported.
+
+| vehicle backbone | median ms | fps | vs baseline | avg detections |
+|---|---|---|---|---|
+| PyTorch, imgsz 640 | 111.9 | 8.9 | 1.00× | 7.7 |
+| **ONNX, imgsz 640** | **75.7** | **13.2** | **1.48×** | 7.6 |
+| PyTorch, imgsz 416 | 85.1 | 11.7 | 1.31× | 4.9 |
+| **ONNX, imgsz 416** | **35.5** | **28.2** | **3.15×** | 5.0 |
+
+Two things to read off that:
+
+* **ONNX export is accuracy-neutral speed.** 1.48× at imgsz 640 with the same
+  detections (7.6 vs 7.7 is noise). There is no reason not to:
+
+  ```bash
+  pelakx export --imgsz 640
+  pelakx run traffic.mp4 --vehicle-weights models/yolo26n_640.onnx
+  ```
+
+* **Dropping `imgsz` costs recall.** 640 → 416 lost a third of the detections
+  on this far-field footage. That is a real trade, not a free win — measure it
+  against *your* camera before shipping it.
+
+On a 576×720 clip with one or two vehicles the PyTorch/ONNX gap narrowed to
+within noise, so treat 1.48× as "what this footage showed", not a constant.
+Run it on yours.
+
 ### Which size to pick
 
 | Situation | Weights |
 |---|---|
-| CPU-only box, single stream | `yolo26n.pt` *(default)* |
-| CPU-only, many streams | `yolo26n.pt` + `frame_stride: 2` |
+| CPU-only box, single stream | `models/yolo26n_640.onnx` (`pelakx export`) |
+| CPU-only, many streams | same + `frame_stride: 2` |
 | Any GPU | `yolo26s.pt` |
 | Far-field / small vehicles, GPU | `yolo26m.pt` + `imgsz: 960` |
 | Maximum accuracy, offline batch | `yolo26x.pt` |
@@ -46,6 +85,20 @@ real-time and not.
 ```bash
 pelakx run traffic.mp4 --vehicle-weights yolo26s.pt --device cuda:0
 ```
+
+### Device selection
+
+`device: auto` is the default everywhere and resolves at startup:
+
+```
+CUDA GPU present  ->  cuda:0
+Apple Silicon     ->  mps
+otherwise         ->  cpu
+```
+
+So the same config file runs on a workstation and on a fanless camera box with
+no edit. Force it with `--device cpu` / `--device cuda:1`, or globally with
+`PELAKX_DEVICE`. `pelakx doctor` prints what it resolved to and why.
 
 ### When *not* to use YOLO26
 
@@ -190,12 +243,43 @@ quality: { min_score: 0.15 }                                       # read even m
 
 ## 6. Where the speed actually goes
 
-On a CPU-only run, the three settings that move the needle, in order:
+Do not guess — measure:
 
-1. **`frame_stride`** — halves everything. A vehicle is in frame for 2–4
-   seconds; you do not need 30 samples of it.
-2. **`quality.min_score`** — the gate typically skips 40–70% of candidate
-   crops. `pelakx run` prints exactly how many under "crops skipped by gate".
-3. **`ocr.early_stop_confidence`** — once a plate is known, stop paying for it.
+```bash
+pelakx bench traffic.mp4 --country IR -n 100
+```
 
-Only after those three does swapping the detector matter.
+It prints a per-stage millisecond breakdown and tells you whether this machine
+keeps up with this stream. Levers in the order they are worth applying:
+
+| lever | effect | cost |
+|---|---|---|
+| `frame_stride: 2–4` | linear | none in practice — a vehicle is in frame for 2–4 s, you do not need 30 samples |
+| `vehicle.standalone_plates: true` | one plate pass per frame instead of one per vehicle | slightly lower recall on small plates |
+| ONNX export (`pelakx export`) | ~25% at imgsz 640 | none — identical detections |
+| `vehicle.imgsz: 416` | ~2× | **real recall loss** on distant vehicles |
+| `quality.min_score` ↑ | fewer OCR calls | marginal crops never read |
+| `ocr.early_stop_confidence` ↓ | fewer OCR calls | slower convergence of the vote |
+
+### standalone_plates, measured
+
+Same 1280×720 clip, ~20 vehicles, 60 frames, CPU:
+
+| | fps | plate detection | calls |
+|---|---|---|---|
+| per vehicle (default) | 2.3 | 268 ms/frame | 327 |
+| **whole frame** | **5.2** | **56 ms/frame** | **60** |
+
+On a crowded scene the whole-frame pass was 2.25× faster *and* produced more
+readings (8 vs 5) — the per-vehicle path was spending its budget re-running the
+detector on 20 small crops. On a sparse scene with distant plates the default
+wins instead. This is exactly the kind of thing to check on your own footage
+rather than take on faith.
+
+### What to expect on CPU
+
+8-core CPU, 1280×720, ~20 vehicles in view: **5–7 fps** out of the box,
+**12–15 fps** with ONNX + `frame_stride: 2`. A 25 fps camera is comfortably
+handled at stride 2–3, which is what a real deployment would use anyway —
+sampling every frame of a vehicle that is in view for three seconds buys
+nothing that the temporal vote does not already have.

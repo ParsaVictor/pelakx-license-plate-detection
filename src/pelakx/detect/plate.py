@@ -25,6 +25,7 @@ from typing import Any
 import numpy as np
 
 from pelakx.detect.base import BaseDetector, DetectorUnavailable, boxes_from_ultralytics
+from pelakx.runtime import onnx_providers, resolve_device
 from pelakx.types import BBox, Detection
 
 
@@ -42,7 +43,7 @@ class UltralyticsPlateDetector(BaseDetector):
         conf: float = 0.25,
         iou: float = 0.45,
         imgsz: int = 640,
-        device: str = "cpu",
+        device: str = "auto",
         verbose: bool = False,
         **options: Any,
     ) -> None:
@@ -51,7 +52,7 @@ class UltralyticsPlateDetector(BaseDetector):
         self.conf = conf
         self.iou = iou
         self.imgsz = imgsz
-        self.device = device
+        self.device = resolve_device(device)
         self.verbose = verbose
 
     @classmethod
@@ -89,10 +90,20 @@ class UltralyticsPlateDetector(BaseDetector):
 
 
 class OnnxPlateDetector(BaseDetector):
-    """Zero-setup ONNX plate detector from ``open-image-models``."""
+    """Zero-setup ONNX plate detector from ``open-image-models``.
+
+    Available models, smallest/fastest first — bigger inputs find smaller and
+    further-away plates, at a proportional CPU cost::
+
+        yolo-v9-t-256-license-plate-end2end
+        yolo-v9-t-384-license-plate-end2end   (default)
+        yolo-v9-t-512-license-plate-end2end
+        yolo-v9-t-640-license-plate-end2end
+        yolo-v9-s-608-license-plate-end2end   (most accurate)
+    """
 
     id = "onnx_plate"
-    label = "open-image-models YOLOv9-t (ONNX, end-to-end)"
+    label = "open-image-models YOLOv9 (ONNX, end-to-end)"
     install_hint = "pip install 'pelakx[onnx]'"
 
     DEFAULT_MODEL = "yolo-v9-t-384-license-plate-end2end"
@@ -108,7 +119,7 @@ class OnnxPlateDetector(BaseDetector):
         super().__init__(**options)
         self.model_name = model
         self.conf = conf
-        self.device = device
+        self.device = resolve_device(device)
 
     @classmethod
     def _probe(cls) -> bool:
@@ -119,12 +130,17 @@ class OnnxPlateDetector(BaseDetector):
             raise DetectorUnavailable(f"open-image-models is not installed. {self.install_hint}")
         import open_image_models
 
-        # 0.6 renamed the constructor and deprecated the old class.
+        # 0.6 renamed the constructor (`create_detector`) and deprecated the
+        # old `LicensePlateDetector` class; support both.
         factory = getattr(open_image_models, "create_detector", None)
         if factory is not None:
+            kwargs: dict[str, Any] = {"conf_thresh": self.conf}
+            providers = onnx_providers(self.device)
+            if providers:
+                kwargs["providers"] = providers
             try:
-                return factory(detection_model=self.model_name, conf_thresh=self.conf)
-            except TypeError:
+                return factory(self.model_name, **kwargs)
+            except TypeError:  # older/newer signature without `providers`
                 return factory(self.model_name, conf_thresh=self.conf)
         return open_image_models.LicensePlateDetector(
             detection_model=self.model_name, conf_thresh=self.conf
@@ -151,8 +167,9 @@ class OnnxPlateDetector(BaseDetector):
 def build(
     weights: str | Path | None = None,
     *,
+    model: str | None = None,
     conf: float = 0.25,
-    device: str = "cpu",
+    device: str = "auto",
     imgsz: int = 640,
     **options: Any,
 ) -> BaseDetector:
@@ -172,7 +189,9 @@ def build(
         return UltralyticsPlateDetector(local, conf=conf, device=device, imgsz=imgsz, **options)
 
     if OnnxPlateDetector.is_available():
-        return OnnxPlateDetector(conf=conf, device=device, **options)
+        return OnnxPlateDetector(
+            model or OnnxPlateDetector.DEFAULT_MODEL, conf=conf, device=device, **options
+        )
 
     raise DetectorUnavailable(
         "no plate detector available. Pick one:\n"
