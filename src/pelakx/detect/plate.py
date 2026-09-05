@@ -116,14 +116,18 @@ class OnnxPlateDetector(BaseDetector):
 
     def _load(self) -> Any:
         if not self.is_available():
-            raise DetectorUnavailable(
-                f"open-image-models is not installed. {self.install_hint}"
-            )
-        from open_image_models import LicensePlateDetector
+            raise DetectorUnavailable(f"open-image-models is not installed. {self.install_hint}")
+        import open_image_models
 
-        return LicensePlateDetector(
-            detection_model=self.model_name,
-            conf_thresh=self.conf,
+        # 0.6 renamed the constructor and deprecated the old class.
+        factory = getattr(open_image_models, "create_detector", None)
+        if factory is not None:
+            try:
+                return factory(detection_model=self.model_name, conf_thresh=self.conf)
+            except TypeError:
+                return factory(self.model_name, conf_thresh=self.conf)
+        return open_image_models.LicensePlateDetector(
+            detection_model=self.model_name, conf_thresh=self.conf
         )
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
@@ -135,9 +139,7 @@ class OnnxPlateDetector(BaseDetector):
                 continue
             out.append(
                 Detection(
-                    bbox=BBox(
-                        float(box.x1), float(box.y1), float(box.x2), float(box.y2)
-                    ),
+                    bbox=BBox(float(box.x1), float(box.y1), float(box.x2), float(box.y2)),
                     confidence=float(getattr(item, "confidence", 0.0)),
                     class_id=0,
                     class_name="plate",
@@ -163,15 +165,11 @@ def build(
       4. a clear error listing what to install.
     """
     if weights:
-        return UltralyticsPlateDetector(
-            weights, conf=conf, device=device, imgsz=imgsz, **options
-        )
+        return UltralyticsPlateDetector(weights, conf=conf, device=device, imgsz=imgsz, **options)
 
     local = Path(__file__).resolve().parents[3] / "models" / "license_plate.pt"
     if local.exists() and UltralyticsPlateDetector.is_available():
-        return UltralyticsPlateDetector(
-            local, conf=conf, device=device, imgsz=imgsz, **options
-        )
+        return UltralyticsPlateDetector(local, conf=conf, device=device, imgsz=imgsz, **options)
 
     if OnnxPlateDetector.is_available():
         return OnnxPlateDetector(conf=conf, device=device, **options)

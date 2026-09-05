@@ -207,4 +207,6 @@ def test_every_shipped_country_parses_a_sample_of_its_own_layouts():
                 for i, slot in enumerate(layout.slots)
             )
             read = parse(sample, spec, ocr_confidence=0.9, strict=True)
-            assert read is not None, f"{spec.code}/{layout.id} could not parse its own sample {sample!r}"
+            assert read is not None, (
+                f"{spec.code}/{layout.id} could not parse its own sample {sample!r}"
+            )

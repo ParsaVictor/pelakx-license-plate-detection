@@ -102,7 +102,9 @@ def _match_slots(
     # Cheapest-first search: try every combination ordered by repair count.
     best: tuple[list[str], int] | None = None
     for combo in product(*per_slot):
-        repairs = sum(1 for original, chosen in zip(tokens, combo, strict=True) if original != chosen)
+        repairs = sum(
+            1 for original, chosen in zip(tokens, combo, strict=True) if original != chosen
+        )
         if repairs > budget:
             continue
         if best is None or repairs < best[1]:
@@ -290,17 +292,29 @@ def identify_country(
     *,
     ocr_confidence: float = 1.0,
     engine: str = "",
+    hint: str | None = None,
+    hint_bonus: float = 0.08,
 ) -> PlateRead | None:
     """Auto-detect which country a plate string belongs to.
 
     Tries every spec and returns the highest-confidence *valid* parse. Useful
-    for border crossings, international corridors, or `--country auto`.
+    for border crossings, international corridors, or ``--country auto``.
+
+    Args:
+        hint: an ISO-2 code the OCR engine suggested (see
+            :func:`pelakx.grammar.region_to_code`). It only breaks ties —
+            a hinted country still has to satisfy its own grammar, and an
+            unhinted country that parses better still wins.
+        hint_bonus: how much the hint is worth, in confidence points.
     """
+    hinted = hint.upper() if hint else None
     best: PlateRead | None = None
+    best_score = float("-inf")
     for spec in specs:
         read = parse(text, spec, ocr_confidence=ocr_confidence, engine=engine, strict=True)
         if read is None:
             continue
-        if best is None or read.confidence > best.confidence:
-            best = read
+        score = read.confidence + (hint_bonus if hinted and spec.code == hinted else 0.0)
+        if score > best_score:
+            best, best_score = read, score
     return best

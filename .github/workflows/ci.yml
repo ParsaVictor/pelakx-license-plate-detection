@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install ruff
+      - run: ruff check src tests
+      - run: ruff format --check src tests
+
+  test:
+    name: test (py${{ matrix.python }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.10", "3.12"]
+        exclude:
+          # one Python per non-Linux runner is enough signal for the cost
+          - os: windows-latest
+            python: "3.10"
+          - os: macos-latest
+            python: "3.10"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      # The whole test suite runs without torch, ultralytics or any weights:
+      # the grammar, fusion, quality, analytics, privacy and store layers are
+      # deliberately ML-dependency-free. Keeping CI that way keeps it fast and
+      # makes an accidental heavy import in a core module fail loudly.
+      - name: Install (core only, no ML stack)
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Smoke-test the CLI
+        shell: bash
+        run: |
+          pelakx version
+          pelakx countries
+          pelakx engines
+          pelakx doctor
+          pelakx parse "AB12CDE" --country GB --json
+          pelakx parse "1234BCD" --country auto --json
+
+  grammars:
+    name: validate country grammars
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e ".[dev]"
+
+      # A malformed YAML in configs/countries/ must fail the build, not get
+      # silently skipped at runtime.
+      - name: Every shipped grammar must load cleanly
+        run: |
+          python - <<'PY'
+          import sys
+          from pelakx.grammar import registry
+
+          codes = registry.codes()
+          errors = registry.load_errors()
+          print(f"loaded {len(codes)} grammars: {', '.join(codes)}")
+          if errors:
+              print("FAILED to load:", *errors, sep="\n  ")
+              sys.exit(1)
+          if len(codes) < 12:
+              print(f"expected at least 12 grammars, found {len(codes)}")
+              sys.exit(1)
+          PY

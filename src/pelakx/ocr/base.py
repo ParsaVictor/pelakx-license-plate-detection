@@ -25,6 +25,7 @@ See ``docs/ADDING_A_COUNTRY.md`` for the full walkthrough.
 from __future__ import annotations
 
 import abc
+import contextlib
 import time
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -91,10 +92,9 @@ class BaseOcrEngine(abc.ABC):
     def warmup(self, size: tuple[int, int] = (64, 192)) -> None:
         """Load and run once on a blank image so the first real frame is fast."""
         self.load()
-        try:
+        # Warmup must never raise: it runs before the first real frame.
+        with contextlib.suppress(Exception):
             self._read(np.zeros((*size, 3), dtype=np.uint8), None)
-        except Exception:  # pragma: no cover - warmup must never raise
-            pass
 
     # -- inference ----------------------------------------------------------
     @abc.abstractmethod
@@ -195,8 +195,7 @@ def resolve(spec: CountrySpec, *, override: str | None = None, **options: Any) -
             return get(engine_id, **options)
         tried.append(f"{engine_id} (needs: {cls.install_hint})")
     raise EngineUnavailable(
-        f"no OCR engine available for {spec.code} ({spec.name_en}). Tried:\n  "
-        + "\n  ".join(tried)
+        f"no OCR engine available for {spec.code} ({spec.name_en}). Tried:\n  " + "\n  ".join(tried)
     )
 
 

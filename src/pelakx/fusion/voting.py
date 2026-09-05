@@ -174,7 +174,11 @@ class TrackConsensus:
                     n_agreeing = len(self.votes)
 
         mean_conf = (
-            sum(v.weight * v.read.confidence for v in self.votes if v.read.canonical == best.canonical)
+            sum(
+                v.weight * v.read.confidence
+                for v in self.votes
+                if v.read.canonical == best.canonical
+            )
             / max(1e-9, sum(v.weight for v in self.votes if v.read.canonical == best.canonical))
             if any(v.read.canonical == best.canonical for v in self.votes)
             else best.confidence
@@ -229,6 +233,10 @@ class VoterPool:
         self.max_votes = max_votes
         self._pool: dict[int, TrackConsensus] = {}
 
+    def votes(self, track_id: int) -> int:
+        consensus = self._pool.get(track_id)
+        return len(consensus) if consensus else 0
+
     def __contains__(self, track_id: int) -> bool:
         return track_id in self._pool
 
@@ -261,3 +269,62 @@ class VoterPool:
     def explain(self, track_id: int) -> dict:
         consensus = self._pool.get(track_id)
         return consensus.explain() if consensus else {"n_votes": 0, "candidates": []}
+
+
+class MultiVoterPool:
+    """A :class:`VoterPool` per country, for ``--country auto`` streams.
+
+    In a mixed-traffic stream one vehicle's readings can legitimately parse as
+    several countries across frames. Votes are kept in separate per-country
+    pools and only compared at the end, so a burst of misparses as one country
+    cannot drown out the consistent readings of another.
+    """
+
+    def __init__(self, specs: dict[str, CountrySpec], *, min_votes: int = 1, max_votes: int = 200):
+        self.specs = specs
+        self.min_votes = min_votes
+        self.max_votes = max_votes
+        self._pools: dict[str, VoterPool] = {}
+
+    def _pool(self, country: str) -> VoterPool | None:
+        spec = self.specs.get(country.upper())
+        if spec is None:
+            return None
+        pool = self._pools.get(spec.code)
+        if pool is None:
+            pool = VoterPool(spec, min_votes=self.min_votes, max_votes=self.max_votes)
+            self._pools[spec.code] = pool
+        return pool
+
+    def __len__(self) -> int:
+        return len({tid for pool in self._pools.values() for tid in pool._pool})
+
+    def add(
+        self, track_id: int, read: PlateRead | None, *, quality: float = 1.0, frame_index: int = 0
+    ) -> None:
+        if read is None:
+            return
+        pool = self._pool(read.country)
+        if pool is not None:
+            pool.add(track_id, read, quality=quality, frame_index=frame_index)
+
+    def votes(self, track_id: int) -> int:
+        return sum(pool.votes(track_id) for pool in self._pools.values())
+
+    def result(self, track_id: int) -> PlateRead | None:
+        candidates = [pool.result(track_id) for pool in self._pools.values()]
+        found = [c for c in candidates if c is not None]
+        return max(found, key=lambda r: r.confidence) if found else None
+
+    def pop(self, track_id: int) -> PlateRead | None:
+        found = [r for pool in self._pools.values() if (r := pool.pop(track_id)) is not None]
+        return max(found, key=lambda r: r.confidence) if found else None
+
+    def explain(self, track_id: int) -> dict:
+        return {
+            "by_country": {
+                code: pool.explain(track_id)
+                for code, pool in self._pools.items()
+                if pool.votes(track_id)
+            }
+        }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import abc
+import contextlib
 from typing import Any, ClassVar
 
 import numpy as np
@@ -51,10 +52,9 @@ class BaseDetector(abc.ABC):
 
     def warmup(self, size: tuple[int, int] = (640, 640)) -> None:
         self.load()
-        try:
+        # Warmup must never raise: it runs before the first real frame.
+        with contextlib.suppress(Exception):
             self.detect(np.zeros((*size, 3), dtype=np.uint8))
-        except Exception:  # pragma: no cover
-            pass
 
     def __repr__(self) -> str:  # pragma: no cover - cosmetic
         return f"<{type(self).__name__} {'loaded' if self._loaded else 'lazy'}>"

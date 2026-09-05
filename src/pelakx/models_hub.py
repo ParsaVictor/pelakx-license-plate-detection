@@ -88,7 +88,9 @@ def download(
     return target
 
 
-def download_default_plate_detector(dest_dir: str | Path = "models", *, force: bool = False) -> Path:
+def download_default_plate_detector(
+    dest_dir: str | Path = "models", *, force: bool = False
+) -> Path:
     """Fetch the default community plate detector into ``models/``."""
     model = PLATE_DETECTORS[DEFAULT_PLATE_DETECTOR]
     print(f"downloading {model.name} from {model.url}")

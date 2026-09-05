@@ -80,42 +80,58 @@ class FastPlateOcr(BaseOcrEngine):
 
     def _read(self, crop: np.ndarray, spec: CountrySpec | None = None) -> RawRead | None:
         crop = _to_bgr(crop)
-        # The API returns either `list[str]` or `(list[str], np.ndarray)`
-        # depending on version, so accept both shapes.
         try:
             output = self._model.run(crop, return_confidence=True)
         except TypeError:  # older signature without the kwarg
             output = self._model.run(crop)
 
-        confidences: np.ndarray | None = None
-        if isinstance(output, tuple):
-            texts, confidences = output[0], output[1]
-        else:
-            texts = output
-        if not texts:
-            return None
-        text = texts[0] if isinstance(texts, (list, tuple)) else str(texts)
+        text, char_confs, region = _unwrap_fast_plate(output)
+        # fast-plate-ocr pads short plates with '_'
+        text = text.replace("_", "").strip()
         if not text:
             return None
 
-        char_confs: list[float] = []
-        confidence = float(self.options.get("default_confidence", 0.85))
-        if confidences is not None:
-            arr = np.asarray(confidences, dtype=float).reshape(-1)
-            if arr.size:
-                char_confs = [float(c) for c in arr[: len(text)]]
-                confidence = float(arr.mean())
-
-        # fast-plate-ocr pads short plates with '_'
-        cleaned = text.replace("_", "").strip()
-        if not cleaned:
-            return None
+        confidence = (
+            float(np.mean(char_confs))
+            if char_confs
+            else float(self.options.get("default_confidence", 0.85))
+        )
         return RawRead(
-            text=cleaned,
+            text=text,
             confidence=max(0.0, min(1.0, confidence)),
             engine=self.id,
-            char_confidences=char_confs[: len(cleaned)],
+            char_confidences=char_confs[: len(text)],
+            region=region,
         )
+
+
+def _unwrap_fast_plate(output: Any) -> tuple[str, list[float], str]:
+    """Normalise every fast-plate-ocr return shape into (text, char_confs, region).
+
+    1.1+ returns ``list[PlatePrediction]`` with ``.plate`` / ``.char_probs`` /
+    ``.region``; earlier versions returned ``list[str]`` or a
+    ``(list[str], ndarray)`` tuple.
+    """
+    confidences: Any = None
+    if isinstance(output, tuple) and len(output) >= 2:
+        output, confidences = output[0], output[1]
+    item = output[0] if isinstance(output, (list, tuple)) and output else output
+    if item is None:
+        return "", [], ""
+
+    region = str(getattr(item, "region", "") or "")
+    text = getattr(item, "plate", None)
+    if text is None:
+        text = item if isinstance(item, str) else str(item)
+
+    probs = getattr(item, "char_probs", None)
+    if probs is None:
+        probs = confidences
+    char_confs: list[float] = []
+    if probs is not None:
+        arr = np.asarray(probs, dtype=float).reshape(-1)
+        char_confs = [float(c) for c in arr]
+    return str(text), char_confs, region
 
 
 # ---------------------------------------------------------------------------

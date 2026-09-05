@@ -89,23 +89,25 @@ class VehicleDetector(BaseDetector):
 
     def _load(self) -> Any:
         if not self.is_available():
-            raise DetectorUnavailable(
-                f"ultralytics is not installed. {self.install_hint}"
-            )
+            raise DetectorUnavailable(f"ultralytics is not installed. {self.install_hint}")
         from ultralytics import YOLO
 
         return YOLO(self.weights)
 
     def _predict_kwargs(self) -> dict[str, Any]:
-        return {
+        kwargs: dict[str, Any] = {
             "conf": self.conf,
             "iou": self.iou,
             "imgsz": self.imgsz,
             "device": self.device,
             "classes": self.classes,
-            "half": self.half,
             "verbose": self.verbose,
         }
+        # `half` is deprecated in recent Ultralytics and warns on every call,
+        # so only pass it when it is actually requested.
+        if self.half:
+            kwargs["half"] = True
+        return kwargs
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
         """Stateless detection — no track ids."""

@@ -115,7 +115,7 @@ def crop_bbox(frame: np.ndarray, bbox: BBox, pad_ratio: float = 0.04) -> np.ndar
     """Cut `bbox` out of `frame`, padded and clipped to the frame."""
     h, w = frame.shape[:2]
     x1, y1, x2, y2 = bbox.pad(pad_ratio, w, h).as_int()
-    if x2 <= x1 or y2 <= y1:
+    if x2 - x1 < 2 or y2 - y1 < 2:
         return np.empty((0, 0, 3), dtype=frame.dtype)
     return frame[y1:y2, x1:x2]
 

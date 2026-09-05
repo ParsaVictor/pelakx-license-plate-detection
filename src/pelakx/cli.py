@@ -6,7 +6,6 @@ import json
 import shutil
 import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -37,7 +36,7 @@ def version() -> None:
 # ---------------------------------------------------------------------------
 @app.command()
 def countries(
-    code: Optional[str] = typer.Argument(None, help="Show one country in detail."),
+    code: str | None = typer.Argument(None, help="Show one country in detail."),
 ) -> None:
     """List the plate grammars PelakX can read."""
     from pelakx.grammar import registry
@@ -186,7 +185,9 @@ def doctor() -> None:
     from pelakx import ocr
     from pelakx.grammar import registry
 
-    console.print(Panel(f"PelakX {__version__}  ·  python {sys.version.split()[0]}", border_style="cyan"))
+    console.print(
+        Panel(f"PelakX {__version__}  ·  python {sys.version.split()[0]}", border_style="cyan")
+    )
 
     table = Table(title="dependencies", box=None)
     table.add_column("package")
@@ -227,8 +228,9 @@ def doctor() -> None:
     except ImportError:
         console.print("\n[yellow]torch not installed — detection is unavailable[/yellow]")
 
-    console.print(f"\ncountry grammars: [bold]{len(registry.codes())}[/bold] "
-                  f"({', '.join(registry.codes())})")
+    console.print(
+        f"\ncountry grammars: [bold]{len(registry.codes())}[/bold] ({', '.join(registry.codes())})"
+    )
     installed = ocr.available()
     console.print(f"OCR engines ready: [bold]{', '.join(installed) or 'none'}[/bold]")
 
@@ -254,19 +256,19 @@ def doctor() -> None:
 def run(
     source: str = typer.Argument(..., help="Video file, RTSP URL, or webcam index."),
     country: str = typer.Option("IR", "--country", "-c"),
-    config: Optional[Path] = typer.Option(None, "--config", help="YAML config file."),
-    out: Optional[Path] = typer.Option(None, "--out", "-o", help="Output directory."),
-    engine: Optional[str] = typer.Option(None, "--engine", help="Force an OCR engine."),
-    vehicle_weights: Optional[str] = typer.Option(None, "--vehicle-weights"),
-    plate_weights: Optional[str] = typer.Option(None, "--plate-weights"),
-    device: Optional[str] = typer.Option(None, "--device", help="cpu, cuda:0, mps…"),
-    stride: Optional[int] = typer.Option(None, "--stride", help="Process every Nth frame."),
-    max_frames: Optional[int] = typer.Option(None, "--max-frames"),
+    config: Path | None = typer.Option(None, "--config", help="YAML config file."),
+    out: Path | None = typer.Option(None, "--out", "-o", help="Output directory."),
+    engine: str | None = typer.Option(None, "--engine", help="Force an OCR engine."),
+    vehicle_weights: str | None = typer.Option(None, "--vehicle-weights"),
+    plate_weights: str | None = typer.Option(None, "--plate-weights"),
+    device: str | None = typer.Option(None, "--device", help="cpu, cuda:0, mps…"),
+    stride: int | None = typer.Option(None, "--stride", help="Process every Nth frame."),
+    max_frames: int | None = typer.Option(None, "--max-frames"),
     no_video: bool = typer.Option(False, "--no-video", help="Skip writing annotated video."),
     privacy: bool = typer.Option(
         False, "--privacy", help="Blur plates, pseudonymise exports, keep no crops."
     ),
-    watch: Optional[str] = typer.Option(
+    watch: str | None = typer.Option(
         None, "--watch", help="Comma-separated watchlist entries (supports 12ب* and re:…)."
     ),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
@@ -398,15 +400,15 @@ def search(
     query: str = typer.Argument("", help="Plate text; '*' works as a wildcard."),
     db: Path = typer.Option(Path("outputs/pelakx.sqlite"), "--db"),
     min_confidence: float = typer.Option(0.0, "--min-confidence"),
-    min_speed: Optional[float] = typer.Option(None, "--min-speed"),
-    country: Optional[str] = typer.Option(None, "--country"),
+    min_speed: float | None = typer.Option(None, "--min-speed"),
+    country: str | None = typer.Option(None, "--country"),
     valid_only: bool = typer.Option(False, "--valid-only"),
     limit: int = typer.Option(50, "--limit"),
 ) -> None:
     """Search a previous run's results.
 
-        pelakx search "12ب*"
-        pelakx search --min-speed 90 --valid-only
+    pelakx search "12ب*"
+    pelakx search --min-speed 90 --valid-only
     """
     from pelakx.store import EventStore
 
@@ -426,7 +428,15 @@ def search(
         console.print("[yellow]no matches[/yellow]")
         return
     table = Table(title=f"{len(rows)} match(es)", box=None)
-    for column in ("track_id", "plate_display", "confidence", "vehicle_class", "speed_kmh", "first_seen", "alerts"):
+    for column in (
+        "track_id",
+        "plate_display",
+        "confidence",
+        "vehicle_class",
+        "speed_kmh",
+        "first_seen",
+        "alerts",
+    ):
         table.add_column(column)
     for row in rows:
         table.add_row(
@@ -446,7 +456,7 @@ def search(
 def new_country(
     code: str = typer.Argument(..., help="ISO-3166 alpha-2 code, e.g. PK"),
     name: str = typer.Option("", "--name", help="English country name."),
-    directory: Optional[Path] = typer.Option(None, "--dir", help="Where to write the YAML."),
+    directory: Path | None = typer.Option(None, "--dir", help="Where to write the YAML."),
 ) -> None:
     """Scaffold a new country grammar from the template."""
     target_dir = directory or (Path(__file__).resolve().parents[2] / "configs" / "countries")
@@ -474,7 +484,7 @@ def new_country(
             f"created [bold]{target}[/bold]\n\n"
             "next:\n"
             "  1. fill in `alphabet` and `layouts` for your country\n"
-            "  2. pelakx parse \"<a real plate>\" --country " + code.upper() + "\n"
+            '  2. pelakx parse "<a real plate>" --country ' + code.upper() + "\n"
             "  3. add a test to tests/test_grammar.py and open a PR\n\n"
             "guide: docs/ADDING_A_COUNTRY.md",
             title="new country grammar",
@@ -506,8 +516,16 @@ def dashboard(
 
     app_path = Path(__file__).resolve().parent / "dashboard" / "app.py"
     cmd = [
-        sys.executable, "-m", "streamlit", "run", str(app_path),
-        "--server.port", str(port), "--", "--db", str(db),
+        sys.executable,
+        "-m",
+        "streamlit",
+        "run",
+        str(app_path),
+        "--server.port",
+        str(port),
+        "--",
+        "--db",
+        str(db),
     ]
     console.print(f"[cyan]launching dashboard on http://localhost:{port}[/cyan]")
     raise typer.Exit(code=subprocess.call(cmd))

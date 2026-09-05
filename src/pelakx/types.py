@@ -48,12 +48,17 @@ class BBox:
         return (int(self.x1), int(self.y1), int(self.x2), int(self.y2))
 
     def clip(self, w: int, h: int) -> BBox:
-        return BBox(
-            max(0.0, min(self.x1, w - 1.0)),
-            max(0.0, min(self.y1, h - 1.0)),
-            max(0.0, min(self.x2, float(w))),
-            max(0.0, min(self.y2, float(h))),
-        )
+        """Clamp to a ``w`` x ``h`` frame.
+
+        A box entirely outside the frame clamps to zero area rather than to a
+        one-pixel sliver at the edge — callers test ``area``/``width`` to decide
+        whether anything is left.
+        """
+        x1 = min(max(0.0, self.x1), float(w))
+        y1 = min(max(0.0, self.y1), float(h))
+        x2 = min(max(0.0, self.x2), float(w))
+        y2 = min(max(0.0, self.y2), float(h))
+        return BBox(x1, y1, max(x1, x2), max(y1, y2))
 
     def pad(self, ratio: float, w: int | None = None, h: int | None = None) -> BBox:
         """Grow the box by `ratio` on every side, optionally clipped to a frame."""
@@ -96,6 +101,9 @@ class RawRead:
     engine: str
     char_confidences: list[float] = field(default_factory=list)
     elapsed_ms: float = 0.0
+    #: country/region the engine guessed, when it can (fast-plate-ocr does).
+    #: Used by `--country auto` as a prior, never as the answer.
+    region: str = ""
 
     def per_char_confidence(self) -> list[float]:
         """Character confidences, falling back to a flat value when unavailable."""

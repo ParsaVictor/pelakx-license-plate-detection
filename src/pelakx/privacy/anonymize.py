@@ -113,5 +113,7 @@ class FaceBlurrer:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = cascade.detectMultiScale(gray, self.scale, self.min_neighbors, minSize=(24, 24))
         for x, y, w, h in faces:
-            blur_region(frame, BBox(float(x), float(y), float(x + w), float(y + h)), strength=strength)
+            blur_region(
+                frame, BBox(float(x), float(y), float(x + w), float(y + h)), strength=strength
+            )
         return len(faces)

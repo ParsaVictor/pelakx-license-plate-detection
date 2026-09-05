@@ -146,7 +146,9 @@ class Annotator:
         pad = 4
         top = y - th - 2 * pad if above else y
         top = max(0, top)
-        cv2.rectangle(frame, (x, top), (x + tw + 2 * pad, top + th + 2 * pad + baseline // 2), color, -1)
+        cv2.rectangle(
+            frame, (x, top), (x + tw + 2 * pad, top + th + 2 * pad + baseline // 2), color, -1
+        )
         cv2.putText(
             frame,
             text,
@@ -218,8 +220,13 @@ class Annotator:
         cv2.line(frame, a, b, (0, 140, 255), 1, cv2.LINE_AA)
         if name:
             mid = ((a[0] + b[0]) // 2, (a[1] + b[1]) // 2)
-            self.label(frame, f"{name} {counts}".strip(), mid, color=(0, 140, 255),
-                       text_color=(255, 255, 255))
+            self.label(
+                frame,
+                f"{name} {counts}".strip(),
+                mid,
+                color=(0, 140, 255),
+                text_color=(255, 255, 255),
+            )
 
     def hud(self, frame: np.ndarray, lines: list[str]) -> None:
         """Bottom-left status block: fps, counts, engine."""

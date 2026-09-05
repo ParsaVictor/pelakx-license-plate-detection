@@ -38,12 +38,12 @@ import numpy as np
 from pelakx.analytics import LineCounter, SpeedEstimator, SpeedStats, Watchlist, dominant_direction
 from pelakx.config import PipelineConfig
 from pelakx.detect import VehicleDetector, build_plate_detector
-from pelakx.fusion import VoterPool
-from pelakx.grammar import parse, registry
+from pelakx.fusion import MultiVoterPool, VoterPool
+from pelakx.grammar import identify_country, parse, region_to_code, registry
 from pelakx.grammar.spec import CountrySpec
 from pelakx.ocr import resolve as resolve_engine
 from pelakx.privacy import FaceBlurrer, blur_region, hash_plate
-from pelakx.quality import QualityGate, prepare
+from pelakx.quality import QualityGate, crop_bbox, enhance, rectify
 from pelakx.render import Annotator, plate_color
 from pelakx.store import CsvWriter, EventStore, JsonlWriter
 from pelakx.types import BBox, Detection, PlateObservation, TrackRecord, VehicleEvent
@@ -101,9 +101,24 @@ class RunSummary:
 class Pipeline:
     """End-to-end license plate intelligence over a video source."""
 
+    #: engine used for `--country auto` when none is configured explicitly
+    AUTO_DEFAULT_ENGINE = "fast_plate"
+
     def __init__(self, config: PipelineConfig | None = None) -> None:
         self.config = config or PipelineConfig()
-        self.spec: CountrySpec = registry.get(self.config.country)
+        requested = self.config.country.strip().upper()
+
+        #: In auto mode every grammar competes for each reading. One OCR engine
+        #: still reads every crop, so auto works within a script (Latin plates
+        #: across Europe), not across scripts — run one pipeline per camera for
+        #: mixed-script sites.
+        self.auto = requested == "AUTO"
+        if self.auto:
+            self.specs: list[CountrySpec] = registry.all_specs()
+            self.spec: CountrySpec = registry.get("GB")  # representative, for defaults
+        else:
+            self.spec = registry.get(requested)
+            self.specs = [self.spec]
 
         self.vehicles = VehicleDetector(
             self.config.vehicle.weights,
@@ -123,7 +138,7 @@ class Pipeline:
         )
         self.ocr = resolve_engine(
             self.spec,
-            override=self.config.ocr.engine,
+            override=self.config.ocr.engine or (self.AUTO_DEFAULT_ENGINE if self.auto else None),
             **(self.config.ocr.options or {}),
         )
 
@@ -137,7 +152,9 @@ class Pipeline:
             aspect_range=(q.aspect_min, q.aspect_max),
             min_score=q.min_score,
         )
-        self.voters = VoterPool(self.spec)
+        self.voters = (
+            MultiVoterPool({s.code: s for s in self.specs}) if self.auto else VoterPool(self.spec)
+        )
         self.counter = LineCounter.from_config(self.config.analytics.lines)
         self.speed = SpeedEstimator(
             self.config.analytics.speed_image_points,
@@ -160,7 +177,7 @@ class Pipeline:
         self._pending: list[VehicleEvent] = []
         #: where to save the best plate crop per track (set by `run`)
         self._crops_dir: Path | None = None
-        self.summary = RunSummary(country=self.spec.code)
+        self.summary = RunSummary(country="AUTO" if self.auto else self.spec.code)
 
     # ------------------------------------------------------------------
     # frame processing
@@ -217,9 +234,8 @@ class Pipeline:
     def _should_read(self, track_id: int, timestamp: float) -> bool:
         """Rate-limit and early-stop OCR per track."""
         cfg = self.config.ocr
-        consensus = self.voters.get(track_id)
-        if len(consensus) >= cfg.early_stop_min_votes:
-            current = consensus.result()
+        if self.voters.votes(track_id) >= cfg.early_stop_min_votes:
+            current = self.voters.result(track_id)
             if current and current.confidence >= cfg.early_stop_confidence:
                 return False
         if cfg.max_reads_per_second <= 0:
@@ -240,7 +256,10 @@ class Pipeline:
             return
 
         h, w = frame.shape[:2]
-        region = vehicle.bbox.pad(self.config.plate.vehicle_pad, w, h)
+        cfg = self.config.plate
+        if max(vehicle.bbox.width, vehicle.bbox.height) < cfg.min_vehicle_px:
+            return
+        region = vehicle.bbox.pad(cfg.vehicle_pad, w, h)
         rx1, ry1, rx2, ry2 = region.as_int()
         if rx2 - rx1 < 24 or ry2 - ry1 < 24:
             return
@@ -248,7 +267,8 @@ class Pipeline:
         if sub.size == 0:
             return
 
-        candidates = self.plates.detect(sub)
+        lo, hi = cfg.aspect_range
+        candidates = [d for d in self.plates.detect(sub) if lo <= d.bbox.aspect_ratio <= hi]
         if not candidates:
             return
         best = max(candidates, key=lambda d: d.confidence)
@@ -267,18 +287,15 @@ class Pipeline:
         if len(track.observations) > 120:
             del track.observations[:-120]
 
-        crop = prepare(
-            frame,
-            plate_box,
-            do_rectify=self.config.quality.rectify,
-            do_enhance=self.config.quality.enhance,
-            target_height=self.config.quality.ocr_height,
-        )
-        if crop.size == 0:
+        # Gate on the *raw* crop. Scoring after upscaling would make every crop
+        # look full-resolution and would flatten the Laplacian, so the gate
+        # would measure the resampler instead of the camera.
+        raw_crop = crop_bbox(frame, plate_box, self.config.plate.vehicle_pad)
+        if raw_crop.size == 0:
             return
 
         if self.config.quality.enabled:
-            report = self.gate.score(crop)
+            report = self.gate.score(raw_crop)
             observation.quality = report.score
             if not report.passed:
                 self.summary.crops_gated += 1
@@ -286,8 +303,18 @@ class Pipeline:
         else:
             observation.quality = 1.0
 
+        crop = raw_crop
+        if self.config.quality.rectify:
+            crop = rectify(crop)
+        if self.config.quality.enhance:
+            crop = enhance(crop, target_height=self.config.quality.ocr_height)
+        if crop.size == 0:
+            return
+
         # Keep the single sharpest crop of this vehicle for the evidence export.
-        if self._crops_dir is not None and observation.quality > track.meta.get("best_quality", 0.0):
+        if self._crops_dir is not None and observation.quality > track.meta.get(
+            "best_quality", 0.0
+        ):
             track.meta["best_quality"] = observation.quality
             track.meta["best_crop"] = crop.copy()
 
@@ -298,13 +325,22 @@ class Pipeline:
             return
         observation.raw = raw
 
-        read = parse(
-            raw.text,
-            self.spec,
-            ocr_confidence=raw.confidence,
-            engine=raw.engine,
-            repair_budget=self.config.ocr.repair_budget,
-        )
+        if self.auto:
+            read = identify_country(
+                raw.text,
+                self.specs,
+                ocr_confidence=raw.confidence,
+                engine=raw.engine,
+                hint=region_to_code(raw.region),
+            )
+        else:
+            read = parse(
+                raw.text,
+                self.spec,
+                ocr_confidence=raw.confidence,
+                engine=raw.engine,
+                repair_budget=self.config.ocr.repair_budget,
+            )
         if read is None:
             return
         observation.read = read
@@ -376,7 +412,7 @@ class Pipeline:
             self.annotator.hud(
                 frame,
                 [
-                    f"PelakX  {self.spec.code} ({self.spec.name_en})   engine={self.ocr.id}",
+                    f"PelakX  {self.summary.country}   engine={self.ocr.id}",
                     f"vehicles={self.summary.vehicles}  reads={self.summary.plates_read}"
                     f"  gated={self.summary.crops_gated}",
                     f"t={timestamp:6.2f}s  active tracks={len(self.tracks)}",
@@ -448,7 +484,9 @@ class Pipeline:
         if self._crops_dir is None or crop is None or self.config.privacy.no_crops:
             return None
         # ASCII-safe filename: plate strings can be Persian, paths should not be.
-        tag = "".join(ch for ch in (read.canonical if read else "") if ch.isascii() and ch.isalnum())
+        tag = "".join(
+            ch for ch in (read.canonical if read else "") if ch.isascii() and ch.isalnum()
+        )
         name = f"track{track.track_id:05d}{'_' + tag if tag else ''}.jpg"
         path = self._crops_dir / name
         try:
@@ -536,7 +574,7 @@ class Pipeline:
                 self.summary.outputs["jsonl"] = str(out_dir / out_cfg.jsonl_name)
             if out_cfg.sqlite:
                 store = EventStore(out_dir / out_cfg.sqlite_name)
-                store.start_run(str(source), self.spec.code, self.config.to_dict())
+                store.start_run(str(source), self.summary.country, self.config.to_dict())
                 self.summary.outputs["sqlite"] = str(out_dir / out_cfg.sqlite_name)
             if out_cfg.crops and not self.config.privacy.no_crops:
                 crops_dir = out_dir / out_cfg.crops_dir

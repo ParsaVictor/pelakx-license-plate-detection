@@ -11,6 +11,7 @@ Entries may be exact plates, prefixes (``12ب*``) or regexes (``re:^12ب3``).
 
 from __future__ import annotations
 
+import contextlib
 import re
 from dataclasses import dataclass, field
 
@@ -59,9 +60,7 @@ def confusion_distance(
                 cost = swap_cost
             else:
                 cost = 1.0
-            current.append(
-                min(previous[j] + 1.0, current[j - 1] + 1.0, previous[j - 1] + cost)
-            )
+            current.append(min(previous[j] + 1.0, current[j - 1] + 1.0, previous[j - 1] + cost))
         previous = current
     return previous[lb]
 
@@ -81,9 +80,7 @@ class Watchlist:
     def from_entries(
         cls, entries: list[str], spec: CountrySpec, *, max_distance: float = 1.0
     ) -> Watchlist:
-        watchlist = cls(
-            spec=spec, max_distance=max_distance, _confusables=_confusable_pairs(spec)
-        )
+        watchlist = cls(spec=spec, max_distance=max_distance, _confusables=_confusable_pairs(spec))
         for raw in entries or []:
             watchlist.add(raw)
         return watchlist
@@ -93,10 +90,9 @@ class Watchlist:
         if not entry:
             return
         if entry.startswith("re:"):
-            try:
+            # A malformed pattern in a watchlist file must not take the camera down.
+            with contextlib.suppress(re.error):
                 self.patterns.append((entry, re.compile(entry[3:])))
-            except re.error:
-                pass
             return
         folded = normalize(entry, script=self.spec.script, noise_words=self.spec.noise_words)
         if entry.endswith("*"):

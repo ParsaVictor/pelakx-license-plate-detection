@@ -44,6 +44,12 @@ class PlateConfig:
     device: str = "cpu"
     #: pad the vehicle box before searching for a plate inside it
     vehicle_pad: float = 0.02
+    #: skip vehicles smaller than this (px, longest side). A 60px car cannot
+    #: contain a readable plate, and upscaling it into the detector's 384px
+    #: input reliably manufactures false positives.
+    min_vehicle_px: int = 96
+    #: reject plate candidates outside this width/height range before OCR
+    aspect_range: tuple[float, float] = (1.2, 8.0)
 
 
 @dataclass(slots=True)

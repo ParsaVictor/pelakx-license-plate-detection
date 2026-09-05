@@ -225,7 +225,8 @@ class EventStore:
                       MAX(speed_kmh)                  AS max_speed
                FROM events WHERE plate <> ''"""
         ).fetchone()
-        out = {k: row[k] for k in row.keys()}
+        # sqlite3.Row iterates its *values*, so .keys() is required here.
+        out = {k: row[k] for k in row.keys()}  # noqa: SIM118
         out["by_class"] = {
             r["vehicle_class"]: r["n"]
             for r in self.conn.execute(
@@ -251,10 +252,25 @@ class EventStore:
 # flat-file writers
 # ---------------------------------------------------------------------------
 CSV_COLUMNS = [
-    "track_id", "plate", "plate_display", "country", "layout", "confidence",
-    "ocr_confidence", "valid", "vehicle_class", "first_seen", "last_seen",
-    "n_frames", "n_reads", "speed_kmh", "direction", "crossings", "alerts",
-    "crop", "source",
+    "track_id",
+    "plate",
+    "plate_display",
+    "country",
+    "layout",
+    "confidence",
+    "ocr_confidence",
+    "valid",
+    "vehicle_class",
+    "first_seen",
+    "last_seen",
+    "n_frames",
+    "n_reads",
+    "speed_kmh",
+    "direction",
+    "crossings",
+    "alerts",
+    "crop",
+    "source",
 ]
 
 

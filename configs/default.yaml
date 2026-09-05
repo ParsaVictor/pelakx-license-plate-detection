@@ -28,6 +28,8 @@ plate:
   imgsz: 640
   device: cpu
   vehicle_pad: 0.02         # grow the vehicle box before searching inside it
+  min_vehicle_px: 96        # skip vehicles too small to contain a readable plate
+  aspect_range: [1.2, 8.0]  # plausible plate width/height; rejects false positives
 
 # --- OCR --------------------------------------------------------------------
 ocr:
