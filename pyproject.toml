@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pelakx"
+version = "0.1.0"
+description = "Multilingual License Plate Intelligence — detect, track, read and understand vehicles in any video stream."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Parsa Karkooti" }]
+keywords = [
+  "alpr", "anpr", "license-plate", "computer-vision", "yolo", "yolo26",
+  "ocr", "persian", "farsi", "traffic-analytics", "onnx",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Image Recognition",
+]
+
+dependencies = [
+  "numpy>=1.24",
+  "opencv-python>=4.8",
+  "pyyaml>=6.0",
+  "rich>=13.0",
+  "typer>=0.12",
+  "pydantic>=2.6",
+]
+
+[project.optional-dependencies]
+# Detection / tracking backbone (YOLO26 + ByteTrack/BoT-SORT)
+detect = ["ultralytics>=8.4.0", "torch>=2.2", "torchvision>=0.17"]
+# CPU-fast ONNX inference path
+onnx = ["onnxruntime>=1.18", "fast-plate-ocr>=1.0", "open-image-models>=0.3"]
+# Persian OCR (CRNN-CTC, Hezar)
+fa = ["hezar>=0.40", "arabic-reshaper>=3.0", "python-bidi>=0.4"]
+# Generic multi-script OCR fallback
+paddle = ["paddleocr>=3.0", "paddlepaddle>=3.0"]
+easyocr = ["easyocr>=1.7"]
+# Dashboard + reporting
+dash = ["streamlit>=1.30", "pandas>=2.0", "plotly>=5.18"]
+dev = ["pytest>=8.0", "ruff>=0.5", "mypy>=1.10"]
+all = [
+  "ultralytics>=8.4.0", "torch>=2.2", "torchvision>=0.17",
+  "onnxruntime>=1.18", "fast-plate-ocr>=1.0", "open-image-models>=0.3",
+  "hezar>=0.40", "arabic-reshaper>=3.0", "python-bidi>=0.4",
+  "streamlit>=1.30", "pandas>=2.0", "plotly>=5.18",
+]
+
+[project.urls]
+Homepage = "https://github.com/ParsaVictor/PelakX"
+Issues = "https://github.com/ParsaVictor/PelakX/issues"
+
+[project.scripts]
+pelakx = "pelakx.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pelakx = ["py.typed"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

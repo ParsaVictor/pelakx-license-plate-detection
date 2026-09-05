@@ -1,0 +1,31 @@
+code: BR
+iso3: BRA
+name_en: Brazil
+name_native: Brasil
+script: latin
+text_direction: ltr
+read_order: ltr
+digit_style: latin
+ocr_engines: { preferred: [fast_plate], fallback: [paddle, easyocr] }
+alphabet:
+  digits: "0123456789"
+  letters: [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z]
+layouts:
+  - id: mercosul
+    name_en: Mercosul (ABC1D23)
+    slots: "LLLDLDD"
+    groups: { head: [0, 3], d1: [3, 4], mid: [4, 5], tail: [5, 7] }
+    display: "{head}{d1}{mid}{tail}"
+    canonical: "{head}{d1}{mid}{tail}"
+    priority: 110
+  - id: legacy
+    name_en: Legacy (ABC1234)
+    slots: "LLLDDDD"
+    groups: { head: [0, 3], serial: [3, 7] }
+    display: "{head}-{serial}"
+    canonical: "{head}{serial}"
+    priority: 100
+confusions:
+  to_digit: { "O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "Z": "2", "S": "5", "B": "8", "G": "6" }
+  to_letter: { "0": "O", "1": "I", "2": "Z", "5": "S", "8": "B", "6": "G" }
+validators: []

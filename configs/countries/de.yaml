@@ -1,0 +1,25 @@
+code: DE
+iso3: DEU
+name_en: Germany
+name_native: Deutschland
+script: latin
+text_direction: ltr
+read_order: ltr
+digit_style: latin
+ocr_engines: { preferred: [fast_plate], fallback: [paddle, easyocr] }
+alphabet:
+  digits: "0123456789"
+  letters: [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, "Ä", "Ö", "Ü"]
+layouts:
+  - id: standard
+    name_en: Standard Kennzeichen
+    # The city block is lazy: without a city-code table, "BMW1234" is ambiguous,
+    # and B|MW|1234 is the right split far more often than BM|W|1234.
+    regex: '^(?P<city>[A-ZÄÖÜ]{1,3}?)(?P<letters>[A-Z]{1,2})(?P<digits>\d{1,4})$'
+    display: "{city}-{letters} {digits}"
+    canonical: "{city}{letters}{digits}"
+    priority: 100
+confusions:
+  to_digit: { "O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "Z": "2", "S": "5", "B": "8", "G": "6" }
+  to_letter: { "0": "O", "1": "I", "2": "Z", "5": "S", "8": "B", "6": "G" }
+validators: []

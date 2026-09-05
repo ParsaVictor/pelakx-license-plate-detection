@@ -1,0 +1,26 @@
+code: ES
+iso3: ESP
+name_en: Spain
+name_native: Espana
+script: latin
+text_direction: ltr
+read_order: ltr
+digit_style: latin
+ocr_engines: { preferred: [fast_plate], fallback: [paddle, easyocr] }
+alphabet:
+  digits: "0123456789"
+  # Spanish post-2000 plates use consonants only - no vowels, no N-tilde, no Q
+  letters: [B, C, D, F, G, H, J, K, L, M, N, P, R, S, T, V, W, X, Y, Z]
+layouts:
+  - id: modern
+    name_en: Modern format (since 2000)
+    slots: "DDDDLLL"
+    groups: { serial: [0, 4], letters: [4, 7] }
+    display: "{serial} {letters}"
+    canonical: "{serial}{letters}"
+    priority: 100
+confusions:
+  to_digit: { "O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "Z": "2", "S": "5", "B": "8", "G": "6" }
+  to_letter: { "0": "D", "1": "L", "2": "Z", "5": "S", "8": "B", "6": "G" }
+validators:
+  - { id: consonants_only, applies_to: [modern], field: letters, type: charset_excludes, value: "AEIOUQ", weight: 0.15 }

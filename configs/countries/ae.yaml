@@ -1,0 +1,23 @@
+code: AE
+iso3: ARE
+name_en: United Arab Emirates
+name_native: al-Imarat
+script: latin              # UAE plates carry both Arabic and Latin; we read the Latin band
+text_direction: ltr
+read_order: ltr
+digit_style: latin
+ocr_engines: { preferred: [fast_plate], fallback: [paddle, easyocr] }
+alphabet:
+  digits: "0123456789"
+  letters: [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z]
+layouts:
+  - id: code_serial
+    name_en: Emirate code + serial
+    regex: '^(?P<code>[A-Z0-9]{1,2})(?P<serial>\d{1,5})$'
+    display: "{code} {serial}"
+    canonical: "{code}{serial}"
+    priority: 100
+confusions:
+  to_digit: { "O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "Z": "2", "S": "5", "B": "8", "G": "6" }
+  to_letter: { "0": "O", "1": "I", "2": "Z", "5": "S", "8": "B", "6": "G" }
+validators: []

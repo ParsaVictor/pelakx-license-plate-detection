@@ -1,0 +1,38 @@
+code: NL
+iso3: NLD
+name_en: Netherlands
+name_native: Nederland
+script: latin
+text_direction: ltr
+read_order: ltr
+digit_style: latin
+ocr_engines: { preferred: [fast_plate], fallback: [paddle, easyocr] }
+alphabet:
+  digits: "0123456789"
+  letters: [B, D, F, G, H, J, K, L, N, P, R, S, T, V, X, Z]
+layouts:
+  - id: sidecode_x
+    name_en: Sidecode 1-AAA-23
+    slots: "DLLLDD"
+    groups: { a: [0, 1], b: [1, 4], c: [4, 6] }
+    display: "{a}-{b}-{c}"
+    canonical: "{a}{b}{c}"
+    priority: 100
+  - id: sidecode_y
+    name_en: Sidecode A-123-BB
+    slots: "LDDDLL"
+    groups: { a: [0, 1], b: [1, 4], c: [4, 6] }
+    display: "{a}-{b}-{c}"
+    canonical: "{a}{b}{c}"
+    priority: 95
+  - id: sidecode_legacy
+    name_en: Sidecode AA-12-BB
+    slots: "LLDDLL"
+    groups: { a: [0, 2], b: [2, 4], c: [4, 6] }
+    display: "{a}-{b}-{c}"
+    canonical: "{a}{b}{c}"
+    priority: 90
+confusions:
+  to_digit: { "O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "Z": "2", "S": "5", "B": "8", "G": "6" }
+  to_letter: { "0": "D", "1": "L", "2": "Z", "5": "S", "8": "B", "6": "G" }
+validators: []

@@ -1,0 +1,148 @@
+# ============================================================================
+#  PelakX country grammar — Islamic Republic of Iran  🇮🇷
+#  گرامر پلاک خودروی ایران
+# ============================================================================
+code: IR
+iso3: IRN
+name_en: Iran
+name_native: ایران
+script: arabic            # writing system of the letter slot
+text_direction: rtl       # direction of the *language*, not of the plate read order
+read_order: ltr           # Iranian plates are read left-to-right, even in an RTL script
+digit_style: fa           # plate is printed with Persian-Indic digits ۰۱۲۳۴۵۶۷۸۹
+
+# Which OCR engines can read this country, in priority order.
+# The pipeline walks the list and takes the first engine that is installed.
+ocr_engines:
+  preferred: [hezar_fa]
+  fallback:  [paddle, easyocr, fast_plate]
+
+# Words printed on the plate that are never part of the reading.
+# Stripped after script folding, longest-first.
+noise_words: [ایران, IRAN, IR]
+
+alphabet:
+  digits: "0123456789"
+  # Multi-character letters (الف, معلولین, تشریفات) are matched greedily
+  # by the tokenizer, longest-first.
+  letters:
+    - الف
+    - ب
+    - پ
+    - ت
+    - ث
+    - ج
+    - د
+    - ز
+    - ژ
+    - س
+    - ش
+    - ص
+    - ط
+    - ع
+    - ف
+    - ق
+    - ک
+    - گ
+    - ل
+    - م
+    - "ن"
+    - و
+    - ه
+    - ی
+    - D
+    - S
+    - معلولین
+    - تشریفات
+
+# Plate layouts. `slots` drives both validation *and* confusion-repair:
+#   D = digit slot,  L = letter slot,  A = alphanumeric slot
+layouts:
+  - id: civilian
+    name_en: Standard vehicle plate
+    name_native: پلاک شخصی/عمومی
+    slots: "DDLDDDDD"
+    # groups map slot ranges to named fields (start, end) — end exclusive
+    groups:
+      left:     [0, 2]    # ۲ رقم سمت چپ
+      letter:   [2, 3]    # حرف
+      right:    [3, 6]    # ۳ رقم سمت راست
+      province: [6, 8]    # کد استان (ایران XX)
+    display: "{left} {letter} {right} | ایران {province}"
+    display_en: "{left}{letter}{right}-IR{province}"
+    canonical: "{left}{letter}{right}{province}"
+    priority: 100
+
+  - id: motorcycle
+    name_en: Motorcycle plate
+    name_native: پلاک موتورسیکلت
+    slots: "DDDDDDDD"
+    groups:
+      province: [0, 3]    # ۳ رقم بالا = کد استان/شهر
+      serial:   [3, 8]    # ۵ رقم پایین
+    display: "{province} - {serial}"
+    display_en: "{province}-{serial}"
+    canonical: "{province}{serial}"
+    priority: 60
+
+  - id: free_zone
+    name_en: Free-trade-zone plate
+    name_native: پلاک مناطق آزاد
+    slots: "DDLDDDDD"
+    groups:
+      left:     [0, 2]
+      letter:   [2, 3]
+      right:    [3, 6]
+      province: [6, 8]
+    display: "{left} {letter} {right} | منطقه آزاد {province}"
+    canonical: "{left}{letter}{right}{province}"
+    priority: 40
+
+# Semantics of the letter slot. Partial on purpose — PRs welcome.
+# TODO(community): complete + cite an official source for every entry.
+letter_semantics:
+  الف:      { en: Government,    fa: دولتی }
+  پ:        { en: Police,        fa: پلیس }
+  ت:        { en: Taxi,          fa: تاکسی }
+  ع:        { en: IRGC,          fa: سپاه }
+  D:        { en: Diplomatic,    fa: دیپلمات }
+  S:        { en: Political,     fa: سیاسی }
+  معلولین:  { en: Disabled/Veteran, fa: جانبازان و معلولین }
+  تشریفات:  { en: Protocol,      fa: تشریفات }
+
+# --- OCR confusion repair --------------------------------------------------
+# When a character lands in a slot it cannot legally occupy, PelakX tries
+# these substitutions (bounded search, see grammar/repair.py).
+confusions:
+  to_digit:
+    { "O": "0", "o": "0", "Q": "0", "D": "0", "I": "1", "l": "1", "|": "1",
+      "Z": "2", "z": "2", "E": "3", "A": "4", "S": "5", "s": "5", "G": "6",
+      "b": "6", "T": "7", "B": "8", "g": "9", "q": "9",
+      "۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4",
+      "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9" }
+  to_letter:
+    # visually similar Persian letters that OCR flips between
+    { "ں": "ن", "ٮ": "ب", "ك": "ک", "ي": "ی", "ة": "ه", "أ": "الف",
+      "إ": "الف", "آ": "الف", "ا": "الف" }
+
+# --- Structural validators (run after a layout matches) --------------------
+validators:
+  - id: province_range
+    applies_to: [civilian, free_zone]
+    field: province
+    type: int_range
+    min: 10
+    max: 99
+    weight: 0.15          # how much passing this adds to the confidence score
+
+  - id: nonzero_right
+    applies_to: [civilian, free_zone]
+    field: right
+    type: not_equal
+    value: "000"
+    weight: 0.05
+
+# Two-digit province ("ایران XX") lookup.
+# Deliberately shipped empty rather than guessed — see docs/ADDING_A_COUNTRY.md
+# for how to contribute a sourced table. `province_range` still validates it.
+province_codes: {}

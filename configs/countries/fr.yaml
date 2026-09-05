@@ -1,0 +1,31 @@
+code: FR
+iso3: FRA
+name_en: France
+name_native: France
+script: latin
+text_direction: ltr
+read_order: ltr
+digit_style: latin
+ocr_engines: { preferred: [fast_plate], fallback: [paddle, easyocr] }
+alphabet:
+  digits: "0123456789"
+  letters: [A, B, C, D, E, F, G, H, J, K, L, M, N, P, Q, R, S, T, V, W, X, Y, Z]
+layouts:
+  - id: siv
+    name_en: SIV format (since 2009)
+    slots: "LLDDDLL"
+    groups: { head: [0, 2], serial: [2, 5], tail: [5, 7] }
+    display: "{head}-{serial}-{tail}"
+    canonical: "{head}{serial}{tail}"
+    priority: 100
+  - id: fni
+    name_en: FNI format (pre-2009)
+    regex: '^(?P<serial>\d{1,4})(?P<letters>[A-Z]{2,3})(?P<dept>\d{2,3})$'
+    display: "{serial} {letters} {dept}"
+    canonical: "{serial}{letters}{dept}"
+    priority: 60
+confusions:
+  to_digit: { "O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "Z": "2", "S": "5", "B": "8", "G": "6" }
+  to_letter: { "0": "O", "1": "I", "2": "Z", "5": "S", "8": "B", "6": "G" }
+validators:
+  - { id: no_iou, applies_to: [siv], field: head, type: charset_excludes, value: "IOU", weight: 0.1 }

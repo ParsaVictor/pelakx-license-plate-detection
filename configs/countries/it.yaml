@@ -1,0 +1,25 @@
+code: IT
+iso3: ITA
+name_en: Italy
+name_native: Italia
+script: latin
+text_direction: ltr
+read_order: ltr
+digit_style: latin
+ocr_engines: { preferred: [fast_plate], fallback: [paddle, easyocr] }
+alphabet:
+  digits: "0123456789"
+  letters: [A, B, C, D, E, F, G, H, J, K, L, M, N, P, R, S, T, V, W, X, Y, Z]
+layouts:
+  - id: modern
+    name_en: Modern format (since 1994)
+    slots: "LLDDDLL"
+    groups: { head: [0, 2], serial: [2, 5], tail: [5, 7] }
+    display: "{head} {serial} {tail}"
+    canonical: "{head}{serial}{tail}"
+    priority: 100
+confusions:
+  to_digit: { "O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "Z": "2", "S": "5", "B": "8", "G": "6" }
+  to_letter: { "0": "O", "1": "I", "2": "Z", "5": "S", "8": "B", "6": "G" }
+validators:
+  - { id: no_ioqu, applies_to: [modern], field: head, type: charset_excludes, value: "IOQU", weight: 0.1 }

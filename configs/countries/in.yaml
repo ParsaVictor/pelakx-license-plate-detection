@@ -1,0 +1,29 @@
+code: IN
+iso3: IND
+name_en: India
+name_native: Bharat
+script: latin
+text_direction: ltr
+read_order: ltr
+digit_style: latin
+ocr_engines: { preferred: [fast_plate], fallback: [paddle, easyocr] }
+alphabet:
+  digits: "0123456789"
+  letters: [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z]
+layouts:
+  - id: bh_series
+    name_en: Bharat (BH) series
+    regex: '^(?P<year>\d{2})BH(?P<serial>\d{4})(?P<letters>[A-Z]{1,2})$'
+    display: "{year} BH {serial} {letters}"
+    canonical: "{year}BH{serial}{letters}"
+    priority: 120
+  - id: standard
+    name_en: State series (MH 12 AB 1234)
+    regex: '^(?P<state>[A-Z]{2})(?P<district>\d{1,2})(?P<letters>[A-Z]{0,3})(?P<serial>\d{1,4})$'
+    display: "{state} {district} {letters} {serial}"
+    canonical: "{state}{district}{letters}{serial}"
+    priority: 100
+confusions:
+  to_digit: { "O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "Z": "2", "S": "5", "B": "8", "G": "6" }
+  to_letter: { "0": "O", "1": "I", "2": "Z", "5": "S", "8": "B", "6": "G" }
+validators: []

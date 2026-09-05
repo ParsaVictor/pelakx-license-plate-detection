@@ -1,0 +1,39 @@
+code: US
+iso3: USA
+name_en: United States
+name_native: United States
+script: latin
+text_direction: ltr
+read_order: ltr
+digit_style: latin
+# US plate syntax is per-state and highly irregular -> stay permissive and let
+# temporal voting + the watchlist do the heavy lifting.
+ocr_engines: { preferred: [fast_plate], fallback: [paddle, easyocr] }
+alphabet:
+  digits: "0123456789"
+  letters: [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z]
+layouts:
+  - id: ca_passenger
+    name_en: California passenger (1ABC234)
+    slots: "DLLLDDD"
+    groups: { d1: [0, 1], letters: [1, 4], d3: [4, 7] }
+    display: "{d1}{letters}{d3}"
+    canonical: "{d1}{letters}{d3}"
+    priority: 120
+  - id: ny_passenger
+    name_en: New York passenger (ABC1234)
+    slots: "LLLDDDD"
+    groups: { letters: [0, 3], serial: [3, 7] }
+    display: "{letters}-{serial}"
+    canonical: "{letters}{serial}"
+    priority: 110
+  - id: generic
+    name_en: Generic US plate (1-8 alphanumerics)
+    regex: '^(?P<serial>[A-Z0-9]{1,8})$'
+    display: "{serial}"
+    canonical: "{serial}"
+    priority: 10
+confusions:
+  to_digit: { "O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "Z": "2", "S": "5", "B": "8", "G": "6" }
+  to_letter: { "0": "O", "1": "I", "2": "Z", "5": "S", "8": "B", "6": "G" }
+validators: []
