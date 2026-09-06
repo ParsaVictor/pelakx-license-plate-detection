@@ -559,6 +559,24 @@ class Pipeline:
             repair_budget=self.config.ocr.repair_budget,
         )
 
+    def _province_name(self, consensus: Any) -> str:
+        """Province/city name for a reading's province field, if known.
+
+        Looks up ``configs/countries/ir.yaml``'s ``province_codes`` table
+        (or the equivalent for whichever country matched, in auto mode) via
+        ``CountrySpec.describe_province``. Returns "" when the layout has no
+        ``province`` field (e.g. the motorcycle layout) or the code isn't in
+        the table — this is a display nicety, never something a read should
+        fail over.
+        """
+        if consensus is None:
+            return ""
+        code = consensus.fields.get("province")
+        if not code:
+            return ""
+        spec = self.spec if not self.auto else registry.get(consensus.country)
+        return spec.describe_province(code)
+
     def _plate_category(self, consensus: Any) -> str | None:
         """Map a validated reading's letter slot to a display category.
 
@@ -654,6 +672,9 @@ class Pipeline:
                 x1, y1, _, _ = det.bbox.as_int()
                 if consensus:
                     text = f"{consensus.display}  {consensus.confidence:.0%}"
+                    province_name = self._province_name(consensus)
+                    if province_name:
+                        text += f"  ({province_name})"
                     if category == "disabled":
                         text += "  ♿"
                     if track.speed_kmh:

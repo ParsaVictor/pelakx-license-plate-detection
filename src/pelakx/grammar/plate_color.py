@@ -12,9 +12,14 @@ background carries real meaning, same idea as many other countries:
   less standardised than white/yellow and is reported inconsistently across
   sources, so treat a ``red`` classification here as a low-confidence hint,
   not a certified category.
-* **green** / **black** / **blue** — seen on military, diplomatic or
-  temporary/dealer plates in various countries; included so the classifier
-  degrades to a label instead of silently guessing "white".
+* **green** — police vehicles (verified against a real photographed sample,
+  see ``configs/countries/ir.yaml``'s letter_semantics header).
+* **blue** — diplomatic/political vehicles (also photo-verified).
+* **brown** — historical/vintage plates (پلاک تاریخی), photo-verified; a
+  structurally different layout (province name + code, not the usual
+  digit-letter-digit slots) that PelakX does not attempt to parse today.
+* **black** — included so the classifier degrades to a label instead of
+  silently guessing "white"; no verified Iranian category found for it.
 
 This module is deliberately simple and fast (a plain HSV histogram over the
 plate crop, no model, no training data) so it can run per-crop on CPU with no
@@ -36,11 +41,12 @@ PlateColorName = str
 #: colour. Simplification — see module docstring.
 COLOR_SEMANTICS: dict[str, dict[str, str]] = {
     "white": {"en": "Private / personal", "fa": "شخصی"},
-    "yellow": {"en": "Public transport / commercial (taxi, van)", "fa": "عمومی/تاکسی"},
-    "red": {"en": "Government (unverified convention)", "fa": "دولتی (نامعتبر/غیرقطعی)"},
-    "green": {"en": "Military / special", "fa": "نظامی/ویژه"},
-    "black": {"en": "Vintage / dealer (context-dependent)", "fa": "تشریفاتی/نمایشگاهی"},
-    "blue": {"en": "Diplomatic (context-dependent)", "fa": "دیپلمات"},
+    "yellow": {"en": "Taxi / public transport / commercial", "fa": "تاکسی/حمل‌ونقل عمومی"},
+    "red": {"en": "Government / protocol", "fa": "دولتی/تشریفات"},
+    "green": {"en": "Police", "fa": "پلیس"},
+    "blue": {"en": "Diplomatic / political", "fa": "دیپلمات/سیاسی"},
+    "brown": {"en": "Historical / vintage", "fa": "تاریخی"},
+    "black": {"en": "No verified Iranian category", "fa": "دسته‌ی تأییدشده‌ای ندارد"},
     "unknown": {"en": "Unclassified", "fa": "نامشخص"},
 }
 
@@ -50,8 +56,9 @@ COLOR_SWATCH_BGR: dict[str, tuple[int, int, int]] = {
     "yellow": (0, 210, 255),
     "red": (40, 40, 220),
     "green": (60, 160, 60),
-    "black": (30, 30, 30),
     "blue": (200, 100, 20),
+    "brown": (35, 65, 110),
+    "black": (30, 30, 30),
     "unknown": (150, 150, 150),
 }
 
@@ -73,6 +80,11 @@ class ColorResult:
 _HSV_RANGES: list[tuple[str, tuple[int, int, int], tuple[int, int, int]]] = [
     ("red_lo", (0, 70, 60), (9, 255, 255)),
     ("red_hi", (170, 70, 60), (179, 255, 255)),
+    # Sits in the narrow gap between red and yellow — measured directly off
+    # a real "پلاک تاریخی" (historical) plate photo: median H=15, S=250,
+    # V=101. Checked before "yellow" so a genuinely brown plate isn't
+    # swallowed by yellow's much wider, brighter range.
+    ("brown", (10, 120, 40), (17, 255, 160)),
     ("yellow", (18, 60, 80), (35, 255, 255)),
     ("green", (36, 40, 40), (85, 255, 255)),
     ("blue", (90, 40, 40), (130, 255, 255)),

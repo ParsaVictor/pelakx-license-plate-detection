@@ -14,7 +14,7 @@ every reading against the country's *real* plate grammar before believing it.
 [![Detection](https://img.shields.io/badge/Detection-YOLO26-orange)]()
 [![OCR](https://img.shields.io/badge/OCR-Persian%20%7C%20Latin%20%7C%20any-success)]()
 [![Countries](https://img.shields.io/badge/Grammars-12%20countries-blueviolet)]()
-[![Tests](https://img.shields.io/badge/tests-78%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-89%20passing-brightgreen)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)]()
 
 </div>
@@ -167,38 +167,62 @@ at all.** → [docs/ADDING_A_COUNTRY.md](docs/ADDING_A_COUNTRY.md)
 
 ## Architecture
 
+Two-stage detection (find the vehicle, then look for a plate *inside* it) shrinks
+the search area by ~95% and gives every plate an owner, which is what makes the
+temporal vote and the Iran-specific enrichment below possible — a bare
+`plate-detector → OCR` pipeline has no vehicle to attach any of this to.
+
+```mermaid
+flowchart TD
+    A[video / RTSP / webcam] --> B["Vehicle detect + track<br/>(YOLO26 + ByteTrack/BoT-SORT,<br/>one stage — detection and tracking<br/>share the association)"]
+    B -->|"search inside the vehicle box<br/>(~95% smaller area, every plate<br/>gets an owner)"| C["Plate detect<br/>(Ultralytics weights or<br/>zero-setup ONNX detector)"]
+    C --> D["Quality gate<br/>(resolution × aspect × Laplacian<br/>focus, scored on the RAW crop)"]
+    D -->|"✗ rejected — never reaches OCR"| Z[skipped]
+    D -->|"✓ passed"| E["OCR engine<br/>(hezar_fa · fast_plate ·<br/>paddle · easyocr · yours)"]
+    E --> F["Country grammar<br/>(normalize script → tokenize →<br/>repair confusions → match layout<br/>→ validators → score)"]
+    F --> G["Temporal fusion<br/>(per-track + per-character vote —<br/>result must still be a legal plate)"]
+    G --> H{"Country = Iran?"}
+    H -->|no| K[Analytics · annotated video<br/>CSV / JSONL / searchable SQLite]
+    H -->|yes| I["Iran enrichment"]
+
+    subgraph I ["Iran-specific enrichment (configs/countries/ir.yaml)"]
+        direction LR
+        I1["Plate-colour classifier<br/>(HSV histogram on the raw crop)"]
+        I2["Letter → category<br/>(letter_semantics table)"]
+        I3["Province/city lookup<br/>(last 2 digits → province_codes)"]
+        I4["Free-zone layout flag<br/>(free_zone / free_zone_temp)"]
+    end
+
+    I1 --> J["Colour-coded box<br/>+ province label"]
+    I2 --> J
+    I3 --> J
+    I4 --> J
+    J --> K
+
+    classDef stage fill:#1f6feb22,stroke:#1f6feb,color:inherit;
+    classDef gate fill:#f8514922,stroke:#f85149,color:inherit;
+    classDef iran fill:#8957e522,stroke:#8957e5,color:inherit;
+    class B,C,E,F,G stage;
+    class D gate;
+    class I1,I2,I3,I4,J iran;
 ```
-video / RTSP / webcam
-        │
-        ▼
-┌───────────────────┐   YOLO26 + ByteTrack/BoT-SORT in one stage
-│ vehicle detect    │   (detection and tracking share the association)
-│ + track           │
-└─────────┬─────────┘
-          │  search inside the vehicle box: ~95% smaller search area,
-          ▼  and every plate gets an owner
-┌───────────────────┐   Ultralytics weights  ·  or zero-setup ONNX detector
-│ plate detect      │
-└─────────┬─────────┘
-          ▼
-┌───────────────────┐   resolution × aspect × Laplacian focus, scored on the
-│ quality gate      │   RAW crop — then rectify / deskew / CLAHE
-└─────────┬─────────┘   ✗ rejected crops never reach OCR
-          ▼
-┌───────────────────┐   engine chosen per country from its grammar file:
-│ OCR engine        │   hezar_fa · fast_plate · paddle · easyocr · yours
-└─────────┬─────────┘
-          ▼
-┌───────────────────┐   normalize script → tokenize → repair confusions
-│ country grammar   │   → match layout → run validators → score
-└─────────┬─────────┘
-          ▼
-┌───────────────────┐   per-track string vote + per-character vote
-│ temporal fusion   │   (stitched result must still be a legal plate)
-└─────────┬─────────┘
-          ▼
-   analytics · annotated video · CSV / JSONL / searchable SQLite
-```
+
+**Colour legend used on the annotated output** (see
+[`src/pelakx/render/annotate.py`](src/pelakx/render/annotate.py) and
+[`src/pelakx/grammar/plate_color.py`](src/pelakx/grammar/plate_color.py) —
+every mapping below was checked against a real, photographed Iranian plate,
+not guessed; sources cited in `configs/countries/ir.yaml`):
+
+| Plate background / category | Box colour | Meaning |
+|---|---|---|
+| White | neutral (default) | Private / personal |
+| Yellow | 🟧 orange | Taxi / public transport / commercial |
+| Red | 🟥 red | Government / protocol |
+| Green | 🟩 green | Police |
+| Blue | 🟦 blue | Diplomatic / political |
+| Brown | 🟫 brown | Historical / vintage (پلاک تاریخی) |
+| Free-trade-zone (permanent or temporary) | 🟪 purple | Structurally different layout — flagged regardless of background colour |
+| معلولین/جانباز letter slot | 🟦 cyan | Disabled / veteran |
 
 Full write-up: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ·
 Model choices and benchmarks: [docs/MODELS.md](docs/MODELS.md)
