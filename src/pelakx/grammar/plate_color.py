@@ -108,20 +108,46 @@ def _border_mask(h: int, w: int, margin: float = 0.14) -> np.ndarray:
     return mask
 
 
-def classify_plate_color(crop_bgr: np.ndarray, *, use_border_only: bool = True) -> ColorResult:
+def classify_plate_color(crop_bgr: np.ndarray, *, use_border_only: bool = False) -> ColorResult:
     """Classify the dominant background colour of a plate crop.
 
     Args:
         crop_bgr: the plate region (already cropped, ideally rectified).
-        use_border_only: sample the border ring (dominated by background,
-            since digits sit in the middle) instead of the whole crop, which
-            is more robust to dark plate text skewing the histogram toward
-            "black". Falls back to the whole crop if it is too small.
+        use_border_only: sample only the border ring instead of the whole
+            crop. OFF by default — measured, not assumed (same discipline as
+            ``QualityConfig.enhance``/``.rectify``, see
+            ``configs/default.yaml``'s history): border-only was the
+            original design, on the theory that a thin ring dominated by
+            background pixels would be more robust than the whole crop,
+            where dark text might skew the histogram toward "black". Real
+            testing against this project's actual reference images —
+            4 photographed non-white Iranian plates (taxi/government/
+            police/diplomatic) plus 6 real white civilian plate crops —
+            showed the opposite: border-only got 4/4 colour plates wrong
+            (all read as "white", because a wide multi-panel reference
+            image's border ring lands mostly on its separate white flag/
+            country-code side-panels rather than the coloured main plate)
+            *and* 5/6 white plates wrong (black/blue/green/red, apparently
+            from edge noise/shadow concentrated right at the crop boundary).
+            Sampling the whole crop got all of those right. Re-enable only
+            if you have real footage where it measurably helps — this exact
+            "obviously more robust" assumption was wrong once already.
+            Falls back to the whole crop if the crop is too small anyway.
 
     Returns:
         A :class:`ColorResult` with the best-matching colour name, the
         fraction of sampled pixels that matched it (as a rough confidence),
         and the (simplified, unverified) semantic hint in English/Farsi.
+
+    Caveat, stated plainly: this heuristic has been validated against
+    photographed *reference* plates (one per category) and real civilian
+    photo crops, but not against real dashcam/CCTV footage of a taxi,
+    government, police, or diplomatic vehicle in the wild — this project
+    does not have any such footage. Lighting, motion blur and JPEG
+    compression on a moving vehicle could behave differently than these
+    static references. Treat a non-white/non-yellow classification as a
+    hint worth a human glance, not a certified reading, until validated on
+    real footage of that category.
     """
     if crop_bgr is None or crop_bgr.size == 0:
         return ColorResult("unknown", 0.0, **COLOR_SEMANTICS["unknown"])
