@@ -30,6 +30,18 @@ COLOR_PLATE_WEAK = (80, 190, 255)
 COLOR_ALERT = (60, 60, 255)
 COLOR_TEXT = (18, 18, 18)
 COLOR_TRACK = (200, 200, 200)
+#: distinct purple/magenta box for vehicles carrying a free-trade-zone plate
+#: (structurally different format — flagged rather than silently mis-parsed).
+COLOR_FREE_ZONE = (204, 50, 197)
+#: distinct cyan box for a plate whose letter slot carries the معلولین/جانباز
+#: (disabled/veteran) semantic — a legal category, not a background colour,
+#: so it is checked before the background-colour tints below.
+COLOR_DISABLED = (219, 189, 21)
+#: background-colour-derived tints (BGR) — a hint, not a certified category,
+#: see pelakx.grammar.plate_color. Distinct from COLOR_FREE_ZONE/COLOR_DISABLED
+#: so all three flags stay visually separable at a glance.
+COLOR_BG_YELLOW = (0, 197, 255)
+COLOR_BG_RED = (40, 40, 220)
 
 #: font files that are known to carry Arabic/Persian glyphs, by platform
 _FONT_CANDIDATES: dict[str, tuple[str, ...]] = {
@@ -253,8 +265,68 @@ class Annotator:
             )
 
 
-def plate_color(confidence: float, alerted: bool = False) -> tuple[int, int, int]:
-    """Green for a confident read, amber for a shaky one, red for an alert."""
+#: layouts rendered in the free-zone purple regardless of confidence — both
+#: the ordinary free-trade-zone civilian format and the two-line "temporary"
+#: variant (``موقت``) share the same visual flag, since both are structurally
+#: distinct from an everyday civilian plate.
+FREE_ZONE_LAYOUTS = frozenset({"free_zone", "free_zone_temp"})
+
+
+def plate_color(
+    confidence: float,
+    alerted: bool = False,
+    layout_id: str | None = None,
+    category: str | None = None,
+    bg_color: str | None = None,
+) -> tuple[int, int, int]:
+    """Green for a confident read, amber for a shaky one, red for an alert.
+
+    Priority (highest first) — each flag is a genuinely different reason to
+    look at the vehicle, so they never blend into each other:
+
+    1. ``layout_id`` in :data:`FREE_ZONE_LAYOUTS` — structurally a free-trade
+       -zone plate (purple). Structural, so it outranks everything else.
+    2. ``category == "disabled"`` — the letter slot carries the
+       معلولین/جانباز semantic (cyan). A legal category, checked before any
+       background-colour hint.
+    3. ``alerted`` — matched the watchlist (red).
+    4. ``bg_color`` — the plate's classified background: ``yellow`` (public
+       transport/taxi) or ``red`` (government, per
+       :mod:`pelakx.grammar.plate_color`'s own "unverified convention"
+       caveat) get a tint; everything else (white/unknown/etc.) falls
+       through to the ordinary confidence colouring below.
+    5. otherwise, confidence: green when confident, amber when shaky.
+    """
+    if layout_id in FREE_ZONE_LAYOUTS:
+        return COLOR_FREE_ZONE
+    if category == "disabled":
+        return COLOR_DISABLED
     if alerted:
         return COLOR_ALERT
+    if bg_color == "yellow":
+        return COLOR_BG_YELLOW
+    if bg_color == "red":
+        return COLOR_BG_RED
     return COLOR_PLATE if confidence >= 0.7 else COLOR_PLATE_WEAK
+
+
+def vehicle_box_color(
+    layout_id: str | None = None,
+    category: str | None = None,
+    bg_color: str | None = None,
+) -> tuple[int, int, int]:
+    """Same priority ladder as :func:`plate_color`, but for the vehicle box.
+
+    The vehicle box is not confidence-graded (it would flicker with every
+    read), so its "nothing special" case is the neutral :data:`COLOR_VEHICLE`
+    rather than a green/amber pair.
+    """
+    if layout_id in FREE_ZONE_LAYOUTS:
+        return COLOR_FREE_ZONE
+    if category == "disabled":
+        return COLOR_DISABLED
+    if bg_color == "yellow":
+        return COLOR_BG_YELLOW
+    if bg_color == "red":
+        return COLOR_BG_RED
+    return COLOR_VEHICLE

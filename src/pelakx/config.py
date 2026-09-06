@@ -33,6 +33,12 @@ class VehicleConfig:
     #: run plate detection on the whole frame instead of inside vehicle boxes.
     #: Cheaper when the camera is close and plates are large.
     standalone_plates: bool = False
+    #: when the vehicle detector finds nothing in a frame (a tight phone-crop
+    #: photo of a bumper, not a live traffic scene), fall back to a whole-frame
+    #: plate scan instead of silently reading nothing. Costs one extra plate
+    #: detector call, but only on frames that would otherwise produce zero
+    #: output.
+    plate_fallback_when_no_vehicle: bool = True
 
 
 @dataclass(slots=True)
@@ -85,9 +91,39 @@ class QualityConfig:
     aspect_min: float = 1.4
     aspect_max: float = 7.0
     min_score: float = 0.25
-    rectify: bool = True
-    enhance: bool = True
-    ocr_height: int = 64
+    #: OFF by default — measured, not assumed. `rectify()` (perspective
+    #: unwarp onto a frontal rectangle) never won on this project's real
+    #: photo set (0/9 improved) and actively lost one: it found a spurious
+    #: quadrilateral on "18ق267-44"'s crop, warped it, and clipped the
+    #: leading "18" off the left edge (`180x43` -> `172x36`), turning a
+    #: correct read into a wrong one. These are near-frontal phone-crop
+    #: photos, not oblique traffic-camera angles, so there was little
+    #: perspective distortion to correct in the first place and the
+    #: contour-based quad-finder had nothing real to lock onto. Re-enable
+    #: for a deployment with genuinely oblique camera angles — but re-verify
+    #: on real footage from that camera first, the same way this default was
+    #: decided, rather than assuming it helps.
+    rectify: bool = False
+    #: OFF by default — measured, not assumed. `enhance()` (Lanczos upscale +
+    #: unsharp mask + CLAHE) was added on the theory that a bigger, crisper
+    #: crop must help the OCR CRNN. Real head-to-head testing on every real
+    #: Iranian plate photo in this project's test set showed the exact
+    #: opposite: `hezar_fa`'s CRNN internally resizes whatever it is given
+    #: down to a fixed 128x32 grayscale input anyway (see
+    #: `model_config.yaml` on the hub), so our own upscale bought it nothing
+    #: — and the unsharp mask's ringing on tiny source strokes was
+    #: introducing artifacts the CTC decoder read as extra/duplicate digits
+    #: (e.g. ground truth "11ط711-11" -> "711ط71111" *with* enhance,
+    #: correct *without* it, on the identical raw crop). Feeding the raw
+    #: (optionally rectified) crop straight to the engine and letting it do
+    #: its own single resize took this project's real 9-image test set from
+    #: 4/9 to 9/9 exact matches. Re-enable per-deployment if a future OCR
+    #: backend genuinely needs a bigger input (fast_plate_ocr does its own
+    #: internal preprocessing too, for what it's worth) — but re-measure
+    #: before assuming it helps, this exact assumption was wrong once
+    #: already.
+    enhance: bool = False
+    ocr_height: int = 96
 
 
 @dataclass(slots=True)

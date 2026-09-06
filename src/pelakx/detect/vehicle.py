@@ -14,6 +14,7 @@ pass ``weights="yolo11n.pt"`` or your own fine-tune.
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 from pathlib import Path
 from typing import Any
@@ -138,3 +139,24 @@ class VehicleDetector(BaseDetector):
             reset = getattr(tracker, "reset", None)
             if callable(reset):
                 reset()
+
+    def warmup(self, size: tuple[int, int] = (640, 640)) -> None:
+        """Run one dummy pass through the *tracking* code path, not `.predict`.
+
+        Ultralytics keeps a mode-specific `self._model.predictor` on the
+        model instance, built the first time either `.predict()` or
+        `.track()` is called. The base class's default warmup always calls
+        `.detect()` (`.predict()`), so on `Pipeline.warmup()` -> real frame,
+        the very first `.track()` call of the run is *also* the first call
+        that ever builds the tracking predictor — a cold-start that can
+        return a subtly different box/track split than a second or later
+        `.track()` call would (observed switching a vehicle's plate-detector
+        input region by tens of pixels on an otherwise identical frame).
+        Warming up through `.track()` instead means the real first frame is
+        never the tracker's first call; `reset()` afterwards drops the
+        dummy detection's track ids so real ids still start at 1.
+        """
+        self.load()
+        with contextlib.suppress(Exception):
+            self.track(np.zeros((*size, 3), dtype=np.uint8), persist=True)
+        self.reset()
