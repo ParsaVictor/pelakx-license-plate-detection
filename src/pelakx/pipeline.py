@@ -47,7 +47,7 @@ from pelakx.grammar.spec import CountrySpec
 from pelakx.ocr import resolve as resolve_engine
 from pelakx.privacy import FaceBlurrer, blur_region, hash_plate
 from pelakx.quality import QualityGate, crop_bbox, enhance, rectify
-from pelakx.render import Annotator, plate_color, vehicle_box_color
+from pelakx.render import Annotator, plate_color
 from pelakx.store import CsvWriter, EventStore, JsonlWriter
 from pelakx.types import (
     BBox,
@@ -648,25 +648,24 @@ class Pipeline:
                     if bg_result.confidence >= 0.3:
                         bg_name = bg_result.name
 
-            vehicle_color = vehicle_box_color(layout_id, category, bg_name)
-            self.annotator.box(frame, det.bbox, vehicle_color)
+            # One colour, shared by the vehicle box, the plate box and the
+            # label background — the user's own vehicle and its plate are
+            # the same real-world object, so drawing them in two different
+            # colours (a neutral vehicle box next to a confidence-graded
+            # plate box, as an earlier version did) reads as two unrelated
+            # signals instead of one. `plate_color`'s own priority ladder
+            # (free-zone > disabled > alert > background-colour tint >
+            # confidence) already encodes everything worth showing.
+            box_color = plate_color(
+                consensus.confidence if consensus else 0.0, alerted, layout_id, category, bg_name
+            )
+            self.annotator.box(frame, det.bbox, box_color)
 
             if last_plate is not None:
                 if privacy.blur_plates:
                     blur_region(frame, last_plate.bbox)
                 else:
-                    self.annotator.box(
-                        frame,
-                        last_plate.bbox,
-                        plate_color(
-                            consensus.confidence if consensus else 0.0,
-                            alerted,
-                            layout_id,
-                            category,
-                            bg_name,
-                        ),
-                        1,
-                    )
+                    self.annotator.box(frame, last_plate.bbox, box_color, 1)
 
             if cfg.draw_labels:
                 x1, y1, _, _ = det.bbox.as_int()
@@ -685,13 +684,7 @@ class Pipeline:
                     frame,
                     text,
                     (x1, y1),
-                    color=plate_color(
-                        consensus.confidence if consensus else 0.0,
-                        alerted,
-                        layout_id,
-                        category,
-                        bg_name,
-                    ),
+                    color=box_color,
                 )
 
         if privacy.blur_faces and self.faces is not None:
