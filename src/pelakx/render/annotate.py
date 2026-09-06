@@ -39,9 +39,17 @@ COLOR_FREE_ZONE = (204, 50, 197)
 COLOR_DISABLED = (219, 189, 21)
 #: background-colour-derived tints (BGR) — a hint, not a certified category,
 #: see pelakx.grammar.plate_color. Distinct from COLOR_FREE_ZONE/COLOR_DISABLED
-#: so all three flags stay visually separable at a glance.
+#: so all three flags stay visually separable at a glance. Chosen to roughly
+#: echo the real plate colour they're reporting (see
+#: configs/countries/ir.yaml's letter_semantics header for the photo sources
+#: behind each category): yellow -> taxi/public/commercial, red ->
+#: government/protocol, green -> police, blue -> diplomatic/political,
+#: brown -> historical/vintage (پلاک تاریخی).
 COLOR_BG_YELLOW = (0, 197, 255)
 COLOR_BG_RED = (40, 40, 220)
+COLOR_BG_GREEN = (60, 160, 60)
+COLOR_BG_BLUE = (200, 100, 20)
+COLOR_BG_BROWN = (35, 65, 110)
 
 #: font files that are known to carry Arabic/Persian glyphs, by platform
 _FONT_CANDIDATES: dict[str, tuple[str, ...]] = {
@@ -272,6 +280,20 @@ class Annotator:
 FREE_ZONE_LAYOUTS = frozenset({"free_zone", "free_zone_temp"})
 
 
+#: background-colour name -> box tint, for the categories with a
+#: photo-verified real-world meaning (see configs/countries/ir.yaml's
+#: letter_semantics header for the sources). ``white``/``black``/``unknown``
+#: are deliberately absent — they fall through to the ordinary
+#: confidence/neutral colouring instead of claiming a category.
+_BG_COLOR_TINTS: dict[str, tuple[int, int, int]] = {
+    "yellow": COLOR_BG_YELLOW,  # taxi / public transport / commercial
+    "red": COLOR_BG_RED,  # government / protocol
+    "green": COLOR_BG_GREEN,  # police
+    "blue": COLOR_BG_BLUE,  # diplomatic / political
+    "brown": COLOR_BG_BROWN,  # historical / vintage
+}
+
+
 def plate_color(
     confidence: float,
     alerted: bool = False,
@@ -290,11 +312,10 @@ def plate_color(
        معلولین/جانباز semantic (cyan). A legal category, checked before any
        background-colour hint.
     3. ``alerted`` — matched the watchlist (red).
-    4. ``bg_color`` — the plate's classified background: ``yellow`` (public
-       transport/taxi) or ``red`` (government, per
-       :mod:`pelakx.grammar.plate_color`'s own "unverified convention"
-       caveat) get a tint; everything else (white/unknown/etc.) falls
-       through to the ordinary confidence colouring below.
+    4. ``bg_color`` — the plate's classified background, via
+       :data:`_BG_COLOR_TINTS` (yellow/red/green/blue/brown); everything
+       else (white/unknown/black) falls through to the ordinary confidence
+       colouring below.
     5. otherwise, confidence: green when confident, amber when shaky.
     """
     if layout_id in FREE_ZONE_LAYOUTS:
@@ -303,10 +324,9 @@ def plate_color(
         return COLOR_DISABLED
     if alerted:
         return COLOR_ALERT
-    if bg_color == "yellow":
-        return COLOR_BG_YELLOW
-    if bg_color == "red":
-        return COLOR_BG_RED
+    tint = _BG_COLOR_TINTS.get(bg_color or "")
+    if tint is not None:
+        return tint
     return COLOR_PLATE if confidence >= 0.7 else COLOR_PLATE_WEAK
 
 
@@ -325,8 +345,7 @@ def vehicle_box_color(
         return COLOR_FREE_ZONE
     if category == "disabled":
         return COLOR_DISABLED
-    if bg_color == "yellow":
-        return COLOR_BG_YELLOW
-    if bg_color == "red":
-        return COLOR_BG_RED
+    tint = _BG_COLOR_TINTS.get(bg_color or "")
+    if tint is not None:
+        return tint
     return COLOR_VEHICLE

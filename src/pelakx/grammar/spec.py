@@ -199,6 +199,16 @@ class CountrySpec:
         entry = self.letter_semantics.get(letter)
         return entry.get(lang, "") if entry else ""
 
+    def describe_province(self, code: str) -> str:
+        """Province/city name for a plate's 2-digit province field, if known.
+
+        Returns "" for a code with no entry in ``province_codes`` (e.g. this
+        country doesn't have one shipped, or the code isn't in the table)
+        rather than raising — a missing lookup is display-quality
+        information, not something that should fail a read.
+        """
+        return self.province_codes.get(code, "")
+
     # -- loading ------------------------------------------------------------
     @classmethod
     def from_dict(cls, d: dict[str, Any], *, source_path: str = "") -> CountrySpec:

@@ -122,27 +122,28 @@ layouts:
     canonical: "{serial}{sub}TEMP{province}"
     priority: 45
 
-# Semantics of the letter slot. Partial on purpose — PRs welcome.
-# TODO(community): complete + cite an official source for every entry.
+# Semantics of the letter slot. Sourced against real photographed plates
+# (nikbakhtkhodro.com's "انواع پلاک خودروها در ایران" reference set, viewed
+# directly — bg colour + letter cross-checked per entry) plus fa.wikipedia.org
+# "پلاک وسایل نقلیه در ایران" and ghabzino.com for anything not covered by a
+# photo. Entries marked "(photo-verified)" were confirmed against an actual
+# plate image, not just a text source — trust those first if a future source
+# disagrees. TODO(community): still missing a photo for ث/ز/ف/ش — text-only.
 letter_semantics:
-  الف:      { en: Government,    fa: دولتی }
-  پ:        { en: Police,        fa: پلیس }
-  ت:        { en: Taxi,          fa: تاکسی }
-  ع:        { en: IRGC,          fa: سپاه }
-  D:        { en: Diplomatic,    fa: دیپلمات }
+  الف:      { en: Government,    fa: دولتی }          # photo-verified: red bg
+  پ:        { en: Police,        fa: پلیس }            # photo-verified: green bg (photo's own caption said "نظامی"/military — wikipedia's more specific "پلیس/انتظامی" kept since it agrees with the pre-existing entry; these are easy to conflate in casual sources)
+  ت:        { en: Taxi,          fa: تاکسی }            # photo-verified: yellow bg, "TAXI" printed
+  ع:        { en: Public transport / commercial, fa: حمل‌ونقل عمومی }  # photo-verified: yellow bg. Corrected from an earlier, unverified "IRGC" guess — the photographed "پلاک خودروهای حمل و نقل عمومی" sample uses ع on yellow, matching wikipedia's "public/commercial" too.
+  ک:        { en: Agricultural machinery, fa: ماشین‌آلات کشاورزی }  # photo-verified: yellow bg
+  ژ:        { en: Disabled/Veteran, fa: جانبازان و معلولین }  # per wikipedia, ژ is the *actual* letter slot for this category — printed as a wheelchair pictogram, not the glyph "ژ" itself (photo confirms: white bg, wheelchair icon, no readable letter glyph). OCR reading that icon as a stray letter (e.g. "ص") is a known, separate limitation — see notebook.
+  گ:        { en: Temporary transit permit, fa: گذر موقت }  # previously left unset for lack of a source; wikipedia's "گ = temporary transit" now matches a photographed "پلاک گذر موقت" sample (white bg, ordinary civilian layout plus a small extra expiry-date field) independently. Distinct from the free_zone_temp layout below, which is a structurally different two-line format.
+  ث:        { en: IRGC (per secondary source, unverified), fa: سپاه (طبق منبع ثانویه، تأیید‌نشده) }  # wikipedia only; no photographed sample in this project's reference set — treat as a hint, not certain
+  D:        { en: Diplomatic,    fa: دیپلمات }          # photo-verified: blue bg, "D" + "سیاسی" printed
   S:        { en: Political,     fa: سیاسی }
   معلولین:  { en: Disabled/Veteran, fa: جانبازان و معلولین }
   معلول:    { en: Disabled/Veteran, fa: جانبازان و معلولین }  # OCR-friendly alias, see alphabet.letters
-  تشریفات:  { en: Protocol,      fa: تشریفات }
+  تشریفات:  { en: Protocol,      fa: تشریفات }          # photo-verified: red bg, "PROTOCOL" printed
   موقت:     { en: Temporary (free zone), fa: موقت منطقه آزاد }
-  # NOTE on "گ" (added to alphabet.letters as an ordinary serial letter):
-  # unlike الف/پ/ت/ع/D/S/معلولین/تشریفات above, "گ" is not documented in any
-  # source we could verify as a distinct reserved-category letter — it is
-  # used as a plain civilian serial letter in several provinces, the same as
-  # ب/ج/د/س/ص/ط/ق/ل/م/ن/و/ه/ی. We deliberately did NOT add it here as a
-  # "government" category: doing so on an unverified guess would print a
-  # wrong, confident-looking label on real plates. If you have a citable
-  # source that "گ" carries an official meaning, please open a PR.
 
 # --- OCR confusion repair --------------------------------------------------
 # When a character lands in a slot it cannot legally occupy, PelakX tries
@@ -176,7 +177,101 @@ validators:
     value: "000"
     weight: 0.05
 
-# Two-digit province ("ایران XX") lookup.
-# Deliberately shipped empty rather than guessed — see docs/ADDING_A_COUNTRY.md
-# for how to contribute a sourced table. `province_range` still validates it.
-province_codes: {}
+# Two-digit province ("ایران XX") lookup — which province/city issued the
+# plate. Sourced from ghabzino.com's "راهنمای پلاک شهرهای ایران" and
+# cross-checked against fa.wikipedia.org's plate article where both cover a
+# code; they agree on every code checked. Iran's codes were assigned
+# historically per issuing traffic-police office, not per current province
+# boundary, so several codes are genuinely shared by more than one province
+# (shown as "A/B") — that is the real system, not an unresolved ambiguity in
+# this table. Codes not listed below (e.g. 70/80/90) were not found in either
+# source and are left out rather than guessed — `province_range`'s 10-99
+# bound still validates the field even for an unlisted code.
+province_codes:
+  "10": تهران
+  "11": تهران
+  "12": خراسان رضوی
+  "13": اصفهان
+  "14": خوزستان
+  "15": آذربایجان شرقی
+  "16": قم
+  "17": آذربایجان غربی
+  "18": همدان
+  "19": کرمانشاه
+  "20": تهران
+  "21": البرز
+  "22": تهران
+  "23": اصفهان
+  "24": خوزستان
+  "25": آذربایجان شرقی
+  "26": خراسان شمالی
+  "27": آذربایجان غربی
+  "28": همدان
+  "29": کرمانشاه
+  "30": تهران/البرز
+  "31": لرستان
+  "32": خراسان رضوی/خراسان شمالی/خراسان جنوبی
+  "33": تهران
+  "34": خوزستان
+  "35": آذربایجان شرقی
+  "36": خراسان رضوی
+  "37": آذربایجان غربی
+  "38": البرز
+  "39": کرمانشاه
+  "40": تهران
+  "41": لرستان
+  "42": خراسان رضوی
+  "43": اصفهان
+  "44": تهران
+  "45": کرمان
+  "46": گیلان
+  "47": مرکزی
+  "48": بوشهر
+  "49": کهگیلویه و بویراحمد
+  "50": تهران
+  "51": کردستان
+  "52": خراسان جنوبی
+  "53": اصفهان
+  "54": یزد
+  "55": تهران
+  "56": گیلان
+  "57": مرکزی
+  "58": بوشهر
+  "59": گلستان
+  "60": تهران
+  "61": کردستان
+  "62": مازندران
+  "63": فارس
+  "64": یزد
+  "65": کرمان
+  "66": تهران
+  "67": اصفهان
+  "68": البرز
+  "69": گلستان
+  "71": چهارمحال و بختیاری
+  "72": مازندران
+  "73": فارس
+  "74": خراسان رضوی/خراسان شمالی
+  "75": کرمان
+  "76": گیلان
+  "77": تهران
+  "78": تهران/البرز
+  "79": قزوین
+  "81": چهارمحال و بختیاری
+  "82": مازندران
+  "83": فارس
+  "84": هرمزگان
+  "85": سیستان و بلوچستان
+  "86": سمنان
+  "87": زنجان
+  "88": تهران
+  "89": قزوین
+  "91": اردبیل
+  "92": مازندران
+  "93": فارس
+  "94": هرمزگان
+  "95": سیستان و بلوچستان
+  "96": سمنان
+  "97": زنجان
+  "98": ایلام
+  "99": تهران
