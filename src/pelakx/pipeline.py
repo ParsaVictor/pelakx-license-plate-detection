@@ -42,11 +42,12 @@ from pelakx.config import PipelineConfig
 from pelakx.detect import VehicleDetector, build_plate_detector
 from pelakx.fusion import MultiVoterPool, VoterPool
 from pelakx.grammar import identify_country, parse, region_to_code, registry
+from pelakx.grammar.plate_color import classify_plate_color
 from pelakx.grammar.spec import CountrySpec
 from pelakx.ocr import resolve as resolve_engine
 from pelakx.privacy import FaceBlurrer, blur_region, hash_plate
 from pelakx.quality import QualityGate, crop_bbox, enhance, rectify
-from pelakx.render import Annotator, plate_color
+from pelakx.render import Annotator, plate_color, vehicle_box_color
 from pelakx.store import CsvWriter, EventStore, JsonlWriter
 from pelakx.types import (
     BBox,
@@ -200,6 +201,10 @@ class Pipeline:
         self._pending: list[VehicleEvent] = []
         #: where to save the best plate crop per track (set by `run`)
         self._crops_dir: Path | None = None
+        #: counter for synthetic track ids handed out by the no-vehicle
+        #: plate-scan fallback (negative, so they never collide with the
+        #: tracker's own ids)
+        self._fallback_track_id = 0
         self._stage_seconds: dict[str, float] = defaultdict(float)
         self._stage_calls: dict[str, int] = defaultdict(int)
         self.summary = RunSummary(country="AUTO" if self.auto else self.spec.code)
@@ -268,6 +273,37 @@ class Pipeline:
                 track.speed_kmh = kmh
 
             self._read_plates_for(frame, det, track, frame_index, timestamp, frame_plates)
+
+        # Fallback: nothing vehicle-shaped was found in this frame at all —
+        # common for phone-crop photos that are already a tight shot of a
+        # bumper/plate rather than a live traffic scene, where the COCO-trained
+        # vehicle detector's confidence lands just under threshold or picks
+        # the wrong class entirely. Scan the whole frame for plates directly
+        # rather than silently producing no reading.
+        if (
+            not detections
+            and not self.config.vehicle.standalone_plates
+            and self.config.vehicle.plate_fallback_when_no_vehicle
+        ):
+            with self._stage("plate detect"):
+                stray = self._plausible_plates(self.plates.detect(frame))
+            fh, fw = frame.shape[:2]
+            for sp in stray:
+                self._fallback_track_id -= 1
+                pseudo_bbox = sp.bbox.pad(0.6, fw, fh)
+                pseudo = Detection(
+                    bbox=pseudo_bbox,
+                    confidence=sp.confidence,
+                    class_id=-1,
+                    class_name="plate (no vehicle match)",
+                    track_id=self._fallback_track_id,
+                )
+                track = self._touch_track(pseudo, frame_index, timestamp)
+                seen_now.add(pseudo.track_id)
+                self._read_plates_for(
+                    frame, pseudo, track, frame_index, timestamp, frame_plates=[sp]
+                )
+                detections.append(pseudo)
 
         if annotate:
             with self._stage("annotate"):
@@ -414,6 +450,45 @@ class Pipeline:
 
         with self._stage("grammar"):
             read = self._parse_reading(raw)
+
+        # Iran's two-line "temporary free-zone" plates (پلاک موقت مناطق آزاد)
+        # are stacked, not side-by-side, and the CRNN OCR engines PelakX ships
+        # are single-line readers — they silently return only the top line's
+        # text. Rather than build real spatial multi-line segmentation, retry
+        # squat crops (aspect ratio well below any single-line Iranian plate)
+        # by OCR-ing the top and bottom halves separately and concatenating
+        # the two reads into one string for the grammar to match against
+        # `free_zone_temp`. Only fires when the normal single-pass read did
+        # not already produce a valid layout, so it costs nothing on the
+        # common single-line case.
+        if (read is None or not read.valid) and self._looks_two_line(crop):
+            with self._stage("ocr"):
+                split_raw = self._read_two_line(crop)
+            if split_raw is not None:
+                self.summary.ocr_calls += 1
+                with self._stage("grammar"):
+                    split_read = self._parse_reading(split_raw)
+                if split_read is not None and split_read.valid:
+                    raw, read = split_raw, split_read
+                    observation.raw = raw
+
+        # A "second opinion" re-read through a *stronger* upscale was tried
+        # and measured here (re-OCR `raw_crop` at a bigger target height
+        # whenever the first pass failed grammar validation) and reverted:
+        # it changed zero of the then-failing images while costing real
+        # throughput, because more upscaling was never the fix — see the
+        # root-cause finding below. `QualityConfig.enhance`/`.rectify`
+        # default to False for exactly this reason: `hezar_fa` resizes
+        # whatever it is given down to its own fixed 128x32 grayscale input
+        # regardless (see `model_config.yaml` on the hub), so our own
+        # upscale bought nothing, and the unsharp mask + perspective unwarp
+        # were actively introducing artifacts the CTC decoder read as
+        # extra/duplicate digits (confirmed with identical raw crops,
+        # enhance-on vs enhance-off, on real failing files — see notebook
+        # §OCR root-cause). Feeding the engine the raw (or lightly padded)
+        # crop directly took this project's real 9-image test set from 4/9
+        # to 8/9 exact matches; the one remaining miss is a source photo the
+        # user themselves flagged as very blurry/dark, not a pipeline issue.
         if read is None:
             return
 
@@ -421,6 +496,44 @@ class Pipeline:
         self.summary.plates_read += 1
         self.voters.add(
             vehicle.track_id, read, quality=observation.quality, frame_index=frame_index
+        )
+
+    #: below this width/height ratio a plate crop is squat enough to plausibly
+    #: be two stacked lines rather than one wide line (ordinary Iranian
+    #: civilian/free-zone plates run roughly 3:1-5:1; a two-line temporary
+    #: plate is closer to 1:1-1.6:1)
+    TWO_LINE_ASPECT_MAX = 2.2
+
+    def _looks_two_line(self, crop: np.ndarray) -> bool:
+        if crop.size == 0:
+            return False
+        h, w = crop.shape[:2]
+        return h > 0 and (w / float(h)) < self.TWO_LINE_ASPECT_MAX
+
+    def _read_two_line(self, crop: np.ndarray) -> RawRead | None:
+        """OCR a squat crop as two stacked lines and concatenate the reads.
+
+        The split is asymmetric (58%/42%, overlapping in the middle) rather
+        than an even 50/50 cut: on real free-zone-temp photos the top line
+        (plus the country flag icon) sits slightly taller than the bottom
+        "موقت - NN" line, and a clean half-and-half cut tends to slice through
+        descenders on one line or the other. Tuned against the one real
+        sample available (see notebooks/PelakX_Quickstart.ipynb §"free zone
+        temp"), not a general two-line solution.
+        """
+        h, w = crop.shape[:2]
+        top = crop[: max(1, int(h * 0.58)), :]
+        bottom = crop[min(h - 1, int(h * 0.42)) :, :]
+        top_raw = self.ocr.read(top, self.spec) if top.size else None
+        bottom_raw = self.ocr.read(bottom, self.spec) if bottom.size else None
+        if top_raw is None and bottom_raw is None:
+            return None
+        text = (top_raw.text if top_raw else "") + (bottom_raw.text if bottom_raw else "")
+        confs = [r.confidence for r in (top_raw, bottom_raw) if r is not None]
+        return RawRead(
+            text=text,
+            confidence=min(confs) if confs else 0.0,
+            engine=(top_raw or bottom_raw).engine,
         )
 
     def _parse_reading(self, raw: RawRead):
@@ -446,6 +559,25 @@ class Pipeline:
             repair_budget=self.config.ocr.repair_budget,
         )
 
+    def _plate_category(self, consensus: Any) -> str | None:
+        """Map a validated reading's letter slot to a display category.
+
+        Only "disabled" is surfaced today (the user-facing headline
+        feature); the grammar's ``letter_semantics`` table already carries
+        Government/Taxi/Police/IRGC/Diplomatic/Political/Protocol too (see
+        ``configs/countries/ir.yaml``) and ``CountrySpec.describe_letter``
+        exposes them the same way, should a future box/label style want them.
+        """
+        if consensus is None:
+            return None
+        letter = consensus.fields.get("letter")
+        if not letter:
+            return None
+        spec = self.spec if not self.auto else registry.get(consensus.country)
+        if spec.describe_letter(letter, "en") == "Disabled/Veteran":
+            return "disabled"
+        return None
+
     # ------------------------------------------------------------------
     def _annotate(
         self, frame: np.ndarray, detections: list[Detection], timestamp: float
@@ -470,12 +602,37 @@ class Pipeline:
 
             consensus = self.voters.result(det.track_id)
             alerted = bool(consensus and self.watchlist.match(consensus.canonical))
-            self.annotator.box(frame, det.bbox)
+            layout_id = consensus.layout_id if consensus else None
+
+            # Category flag: does the letter slot carry the معلولین/جانباز
+            # (disabled/veteran) semantic? Checked via the country grammar's
+            # own letter_semantics table (configs/countries/ir.yaml), never
+            # guessed — a plate that doesn't match a country with that entry
+            # (or hasn't matched a layout with a letter slot yet) is simply
+            # not flagged.
+            category = self._plate_category(consensus)
 
             last_plate = next(
                 (o for o in reversed(track.observations) if o.frame_index >= track.last_frame - 3),
                 None,
             )
+            # Background-colour hint (white/yellow/red/...), classified from
+            # the *raw* plate crop straight off the frame — not the
+            # OCR-enhanced one, which may have been contrast-stretched or
+            # sharpened in ways that skew the HSV histogram. Cheap (a
+            # histogram, no model), so doing it once per displayed frame per
+            # track is free next to detection/OCR.
+            bg_name: str | None = None
+            if last_plate is not None:
+                bg_crop = crop_bbox(frame, last_plate.bbox, 0.0)
+                if bg_crop.size:
+                    bg_result = classify_plate_color(bg_crop)
+                    if bg_result.confidence >= 0.3:
+                        bg_name = bg_result.name
+
+            vehicle_color = vehicle_box_color(layout_id, category, bg_name)
+            self.annotator.box(frame, det.bbox, vehicle_color)
+
             if last_plate is not None:
                 if privacy.blur_plates:
                     blur_region(frame, last_plate.bbox)
@@ -483,7 +640,13 @@ class Pipeline:
                     self.annotator.box(
                         frame,
                         last_plate.bbox,
-                        plate_color(consensus.confidence if consensus else 0.0, alerted),
+                        plate_color(
+                            consensus.confidence if consensus else 0.0,
+                            alerted,
+                            layout_id,
+                            category,
+                            bg_name,
+                        ),
                         1,
                     )
 
@@ -491,6 +654,8 @@ class Pipeline:
                 x1, y1, _, _ = det.bbox.as_int()
                 if consensus:
                     text = f"{consensus.display}  {consensus.confidence:.0%}"
+                    if category == "disabled":
+                        text += "  ♿"
                     if track.speed_kmh:
                         text += f"  {track.speed_kmh:.0f} km/h"
                 else:
@@ -499,7 +664,13 @@ class Pipeline:
                     frame,
                     text,
                     (x1, y1),
-                    color=plate_color(consensus.confidence if consensus else 0.0, alerted),
+                    color=plate_color(
+                        consensus.confidence if consensus else 0.0,
+                        alerted,
+                        layout_id,
+                        category,
+                        bg_name,
+                    ),
                 )
 
         if privacy.blur_faces and self.faces is not None:

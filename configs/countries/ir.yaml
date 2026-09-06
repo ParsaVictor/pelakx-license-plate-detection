@@ -53,7 +53,14 @@ alphabet:
     - D
     - S
     - معلولین
+    - معلول    # OCR engines very rarely produce the full "معلولین"; without this
+               # alias the tokenizer falls back to splitting it into 5 separate
+               # single-char letter tokens (م ع ل و ل), which can never fit a
+               # one-letter slot and silently fails to match any layout.
     - تشریفات
+    - موقت     # marker word on temporary free-trade-zone plates (پلاک موقت),
+               # see the free_zone_temp layout below. Treated as one letter
+               # token the same way معلولین/تشریفات are.
 
 # Plate layouts. `slots` drives both validation *and* confusion-repair:
 #   D = digit slot,  L = letter slot,  A = alphanumeric slot
@@ -98,6 +105,23 @@ layouts:
     canonical: "{left}{letter}{right}{province}"
     priority: 40
 
+  - id: free_zone_temp
+    name_en: Temporary free-trade-zone plate
+    name_native: پلاک موقت مناطق آزاد
+    # Two printed lines — "NNNNN-NN" over "موقت - NN" — read by PelakX as one
+    # flattened string (top line then bottom line; see Pipeline._read_two_line)
+    # rather than true spatial two-line segmentation. A fixed `slots` pattern
+    # is too brittle here: hezar_fa's CRNN is a plate-*character* recognizer,
+    # not a word reader, so "موقت" almost never comes back as clean text —
+    # it lands as 1-4 unpredictable letter-ish characters. A regex tolerates
+    # that noise instead of requiring an exact token match: 9 digits (5-digit
+    # serial + 2-digit sub + 2-digit province), then whatever the "موقت"
+    # region OCR'd as.
+    regex: '^(?P<serial>\d{5})(?P<sub>\d{2})(?P<province>\d{2})[^\d]{0,10}$'
+    display: "{serial}-{sub} | موقت - {province}"
+    canonical: "{serial}{sub}TEMP{province}"
+    priority: 45
+
 # Semantics of the letter slot. Partial on purpose — PRs welcome.
 # TODO(community): complete + cite an official source for every entry.
 letter_semantics:
@@ -108,7 +132,17 @@ letter_semantics:
   D:        { en: Diplomatic,    fa: دیپلمات }
   S:        { en: Political,     fa: سیاسی }
   معلولین:  { en: Disabled/Veteran, fa: جانبازان و معلولین }
+  معلول:    { en: Disabled/Veteran, fa: جانبازان و معلولین }  # OCR-friendly alias, see alphabet.letters
   تشریفات:  { en: Protocol,      fa: تشریفات }
+  موقت:     { en: Temporary (free zone), fa: موقت منطقه آزاد }
+  # NOTE on "گ" (added to alphabet.letters as an ordinary serial letter):
+  # unlike الف/پ/ت/ع/D/S/معلولین/تشریفات above, "گ" is not documented in any
+  # source we could verify as a distinct reserved-category letter — it is
+  # used as a plain civilian serial letter in several provinces, the same as
+  # ب/ج/د/س/ص/ط/ق/ل/م/ن/و/ه/ی. We deliberately did NOT add it here as a
+  # "government" category: doing so on an unverified guess would print a
+  # wrong, confident-looking label on real plates. If you have a citable
+  # source that "گ" carries an official meaning, please open a PR.
 
 # --- OCR confusion repair --------------------------------------------------
 # When a character lands in a slot it cannot legally occupy, PelakX tries

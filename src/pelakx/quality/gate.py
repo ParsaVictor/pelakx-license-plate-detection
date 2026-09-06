@@ -201,16 +201,44 @@ def _order_corners(pts: np.ndarray) -> np.ndarray:
     return ordered
 
 
+def _unsharp_mask(image: np.ndarray, amount: float = 0.8, radius: int = 3) -> np.ndarray:
+    """Cheap classical sharpening: subtract a blurred copy from the original.
+
+    Tiny plate crops lose stroke edges when they are stretched several times
+    their source size — CLAHE alone re-balances contrast but does not put
+    edge energy back. An unsharp mask is a few microseconds of `GaussianBlur`
+    + `addWeighted`, orders of magnitude cheaper than a super-resolution
+    network, and it measurably crisps character strokes for the CRNN.
+    """
+    blurred = cv2.GaussianBlur(image, (0, 0), sigmaX=radius)
+    return cv2.addWeighted(image, 1.0 + amount, blurred, -amount, 0)
+
+
 def enhance(crop: np.ndarray, target_height: int = 64, clahe: bool = True) -> np.ndarray:
-    """Upscale a small crop and equalise its contrast for OCR."""
+    """Upscale a small crop and equalise its contrast for OCR.
+
+    Source plate photos vary wildly in how much of the crop's pixels are
+    real signal: a live traffic-camera plate crop is close to `target_height`
+    already, while a phone-crop photo of a printed plate can arrive at 25-50px
+    tall. Cubic interpolation is fine for a mild resize but starts to look
+    smeared/blocky once the crop must be stretched more than ~2x — Lanczos4
+    keeps edges better at those larger factors, and a light unsharp mask
+    afterwards puts back stroke contrast that any resampler softens.
+    """
     if crop.size == 0:
         return crop
     h, w = crop.shape[:2]
+    upscaled = False
     if h < target_height:
         scale = target_height / float(h)
-        crop = cv2.resize(
-            crop, (max(1, int(w * scale)), target_height), interpolation=cv2.INTER_CUBIC
-        )
+        interp = cv2.INTER_CUBIC if scale <= 2.0 else cv2.INTER_LANCZOS4
+        crop = cv2.resize(crop, (max(1, int(w * scale)), target_height), interpolation=interp)
+        upscaled = True
+    if upscaled:
+        # Sharpen a bit harder the more we had to stretch — a 4x blow-up needs
+        # more help than a 1.2x one, but never enough to introduce ringing.
+        amount = min(1.2, 0.5 + 0.15 * scale)
+        crop = _unsharp_mask(crop, amount=amount)
     if not clahe:
         return crop
     if crop.ndim == 2:
