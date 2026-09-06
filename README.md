@@ -54,7 +54,7 @@ Layer ① is why a plate that *no single frame read correctly* still comes out r
 ## 60-second quickstart
 
 ```bash
-git clone https://github.com/ParsaVictor/PelakX.git
+git clone https://github.com/ParsaVictor/pelakx-license-plate-detection.git
 cd PelakX
 pip install -e ".[detect,onnx]"     # add ",fa" for Persian, ",dash" for the dashboard
 ```
@@ -162,6 +162,16 @@ compute it saves.
 Grammars live in `configs/countries/*.yaml` and are also loaded from
 `~/.pelakx/countries/` and `$PELAKX_COUNTRIES` — **a country PR touches no Python
 at all.** → [docs/ADDING_A_COUNTRY.md](docs/ADDING_A_COUNTRY.md)
+
+**Plate-category recognition (background colour → taxi/government/police/
+diplomatic/etc., letter → special-use category, region-code → province/city)
+is implemented today for Iran** — see the gallery below — as the reference
+implementation of a pattern most countries share (a plate's colour and
+special letters usually encode its use, and a code segment usually encodes
+its issuing region). Nothing about `letter_semantics`/`province_codes`/the
+colour classifier is Iran-specific in code; adding the same depth for another
+country is a grammar-file PR (sourced colour/letter/region tables), not a new
+subsystem.
 
 ---
 

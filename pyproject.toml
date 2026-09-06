@@ -53,8 +53,8 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ParsaVictor/PelakX"
-Issues = "https://github.com/ParsaVictor/PelakX/issues"
+Homepage = "https://github.com/ParsaVictor/pelakx-license-plate-detection"
+Issues = "https://github.com/ParsaVictor/pelakx-license-plate-detection/issues"
 
 [project.scripts]
 pelakx = "pelakx.cli:app"
