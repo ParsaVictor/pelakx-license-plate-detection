@@ -224,6 +224,25 @@ not guessed; sources cited in `configs/countries/ir.yaml`):
 | Free-trade-zone (permanent or temporary) | 🟪 purple | Structurally different layout — flagged regardless of background colour |
 | معلولین/جانباز letter slot | 🟦 cyan | Disabled / veteran |
 
+### Iran plate categories, one by one
+
+Every row below is either a real annotated frame this project actually produced
+("Ours" — click through to reproduce it yourself in
+[the notebook](notebooks/PelakX_Quickstart.ipynb)), or a reference plate photo
+used to *verify* the category's real-world colour and letter before writing a
+single line of code (credit: [nikbakhtkhodro.com](https://nikbakhtkhodro.com/%D8%A7%D9%86%D9%88%D8%A7%D8%B9-%D9%BE%D9%84%D8%A7%DA%A9-%D8%AE%D9%88%D8%AF%D8%B1%D9%88%D9%87%D8%A7-%D8%AF%D8%B1-%D8%A7%DB%8C%D8%B1%D8%A7%D9%86/), used here for illustration/education).
+
+| | What it looks like | What the colour/letter means | Status |
+|---|---|---|---|
+| **Civilian (white)** | ![civilian](docs/assets/plate_types/ours_civilian_white.jpg) | White background, ordinary letter (ب/د/س/ص/ط/ق/ل/م/ن/و/ه/ی) → private vehicle, the overwhelming majority of plates. | ✅ Ours — full pipeline, real photo |
+| **Free-trade-zone, temporary (پلاک موقت مناطق آزاد)** | ![free zone temp](docs/assets/plate_types/ours_free_zone_temp.jpg) | Two printed lines (serial-sub over "موقت"-province); structurally different from every other layout, so it gets a purple box regardless of its actual background colour. | ✅ Ours — full pipeline, real photo |
+| **Taxi** | ![taxi](docs/assets/plate_types/ref_taxi.jpg) | Yellow background + letter ت. | ✅ Colour + letter logic implemented and verified against this reference photo — not yet confirmed on real moving-vehicle footage (none available yet) |
+| **Government (دولتی)** | ![government](docs/assets/plate_types/ref_government.jpg) | Red background + letter الف. | ✅ same as above |
+| **Police (پلیس)** | ![police](docs/assets/plate_types/ref_police.jpg) | Green background + letter پ. | ✅ same as above |
+| **Diplomatic / political (سیاسی)** | ![diplomat](docs/assets/plate_types/ref_diplomat.jpg) | Blue background + letter D. | ✅ same as above |
+| **Historical / vintage (تاریخی)** | ![historical](docs/assets/plate_types/ref_historical.jpg) | Brown background; a *different* layout entirely (province name + code, not digit-letter-digit slots). | ⚠️ Colour classified; the layout itself is not parsed — known limitation |
+| **Disabled / veteran (معلولین و جانبازان)** | ![disabled](docs/assets/plate_types/ref_disabled.jpg) | White background; the letter slot is actually **ژ**, printed as a wheelchair pictogram rather than the glyph itself (per fa.wikipedia.org — this also explains why OCR sometimes misreads the icon as a stray letter). | ⚠️ Category logic verified correct against synthetic input; the OCR engine does not yet read the real pictogram — known limitation, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+
 Full write-up: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ·
 Model choices and benchmarks: [docs/MODELS.md](docs/MODELS.md)
 
