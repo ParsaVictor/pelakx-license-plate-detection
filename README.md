@@ -136,11 +136,24 @@ A real run on 131 frames of dashcam footage, **CPU only, no GPU**:
 
 ## Countries shipped
 
-| | | | |
-|---|---|---|---|
-| 🇮🇷 Iran (3 layouts, Persian) | 🇬🇧 United Kingdom | 🇺🇸 United States | 🇩🇪 Germany |
-| 🇫🇷 France | 🇪🇸 Spain | 🇮🇹 Italy | 🇳🇱 Netherlands |
-| 🇹🇷 Türkiye | 🇮🇳 India | 🇧🇷 Brazil | 🇦🇪 UAE |
+| Code | Country | Script | Layouts | Preferred OCR | Plate-category analysis |
+|---|---|---|---|---|---|
+| `IR` | 🇮🇷 Iran | Arabic (Persian) | civilian · motorcycle · free-zone · free-zone temporary | `hezar_fa` | ✅ colour · letter → use · province code (full) |
+| `GB` | 🇬🇧 United Kingdom | Latin | current · prefix | `fast_plate` | grammar only |
+| `US` | 🇺🇸 United States | Latin | CA · NY · generic | `fast_plate` | grammar only |
+| `DE` | 🇩🇪 Germany | Latin | standard | `fast_plate` | grammar only |
+| `FR` | 🇫🇷 France | Latin | SIV · FNI | `fast_plate` | grammar only |
+| `ES` | 🇪🇸 Spain | Latin | modern | `fast_plate` | grammar only |
+| `IT` | 🇮🇹 Italy | Latin | modern | `fast_plate` | grammar only |
+| `NL` | 🇳🇱 Netherlands | Latin | sidecode x · y · legacy | `fast_plate` | grammar only |
+| `TR` | 🇹🇷 Türkiye | Latin | standard | `fast_plate` | grammar only |
+| `IN` | 🇮🇳 India | Latin | standard · BH-series | `fast_plate` | grammar only |
+| `BR` | 🇧🇷 Brazil | Latin | Mercosul · legacy | `fast_plate` | grammar only |
+| `AE` | 🇦🇪 UAE | Latin | emirate + code | `fast_plate` | grammar only |
+
+*"Plate-category analysis" = decoding a plate's colour/letter/region into taxi/government/police/province etc.
+It is fully implemented for Iran as the reference; every other country validates against its grammar
+(layout, alphabet, confusion repair, structural validators) and is ready for the same tables via a YAML PR.*
 
 ```bash
 pelakx countries          # list them
