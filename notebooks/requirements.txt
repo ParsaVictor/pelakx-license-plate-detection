@@ -1,0 +1,24 @@
+# محیط پروژه‌ی «تشخیص پلاک» — CPU
+# نصب: اسکریپت setup_env.ps1 را اجرا کنید
+# نسخه‌ها با PelakX/pyproject.toml هم‌راستا هستند تا یک venv برای هر دو پروژه کافی باشد.
+
+numpy>=1.24,<2.0          # سازگاری با easyocr / ultralytics
+opencv-python>=4.8
+torch==2.5.1              # نسخه‌ی پایدار CPU (2.14 روی ویندوز DLL لود نمی‌شد)
+torchvision==0.20.1
+ultralytics>=8.4.0        # YOLOv8 / YOLO26
+easyocr>=1.7             # OCR لاتین + fallback فارسی
+
+# OCR مخصوص پلاک فارسی (CRNN-CTC)
+hezar>=0.40
+arabic-reshaper>=3.0
+python-bidi>=0.4
+
+# OCR دقیق پلاک لاتین (۶۵+ کشور، ONNX)
+fast-plate-ocr>=1.0
+onnxruntime==1.17.3       # نسخه‌های جدیدتر روی این ویندوز DLL لود نمی‌کنند
+pandas>=2.0
+
+# ابزار نوت‌بوک
+ipykernel
+jupyterlab
