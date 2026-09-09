@@ -18,6 +18,7 @@ python-bidi>=0.4
 fast-plate-ocr>=1.0
 onnxruntime==1.17.3       # نسخه‌های جدیدتر روی این ویندوز DLL لود نمی‌کنند
 pandas>=2.0
+lapx>=0.5                 # ردیاب ByteTrack در pelak_2.ipynb
 
 # ابزار نوت‌بوک
 ipykernel
