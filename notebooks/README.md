@@ -28,6 +28,21 @@ paths in the **بخش ۲ / Settings** cell (`PROJECT_DIR`, `VIDEO_DIR`).
 runtime 1.17.3, hezar, fast-plate-ocr). It is separate from the packaged
 `PelakX` library at the repo root.
 
+## `pelak_2.ipynb` — crowded-scene / highway variant
+
+Same pipeline as `pelak.ipynb`, tuned for footage with **many vehicles** (highway
+cameras) where the nano model missed about half of them:
+
+- vehicle model **`yolo11s` @ `imgsz=1280`, `conf=0.30`** — roughly 3× the recall on
+  dense scenes (also fine for close-up / large objects).
+- **ByteTrack** (`model.track`) — each vehicle gets a persistent ID, robust to
+  occlusion; needs `lapx` (in `requirements.txt`).
+- OCR runs at most `MAX_OCR_TRIES` times per vehicle, then the plate is **locked**
+  and skipped — keeps total compute low despite the heavier detector.
+- smaller on-frame labels; plate text shown only once a reading locks.
+
+Use `pelak.ipynb` for clear single-vehicle clips, `pelak_2.ipynb` for busy scenes.
+
 ## `PelakX_Quickstart.ipynb`
 
 Walkthrough of the packaged `pelakx` library (grammar engine, fusion, analytics).
