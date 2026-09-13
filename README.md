@@ -18,6 +18,12 @@ every reading against the country's *real* plate grammar before believing it.
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)]()
 [![Telegram](https://img.shields.io/badge/Telegram-Parsa__Karkooti-26A5E4?logo=telegram&logoColor=white)](https://t.me/Parsa_Karkooti)
 
+<br/>
+
+![PelakX live demo — vehicle and license plate detection with OCR running on real traffic footage](docs/assets/pelak_demo.gif)
+
+*Live output, unedited: vehicle detection, plate detection, and OCR running together on real footage — see [more in the notebooks section](#-notebooks--the-fastest-way-to-see-it-work).*
+
 </div>
 
 ---
@@ -151,8 +157,9 @@ deployment for a new camera without touching a single line of code.
 
 ### 🎬 See it in action
 
-<!-- TODO: embed a demo GIF here, e.g. docs/assets/pelak_demo.gif -->
-*Demo GIF coming soon.*
+The animation at the very top of this page is this pipeline's real, unedited
+output on real traffic footage — vehicle detection, plate detection and OCR,
+all running together.
 
 ### 🧠 How the pipeline thinks — architecture at a glance
 
@@ -191,10 +198,10 @@ flowchart TD
     SKIP --> DRAW
     DRAW --> LOOP
 
-    classDef cfg fill:#8957e522,stroke:#8957e5,color:inherit;
-    classDef stage fill:#1f6feb22,stroke:#1f6feb,color:inherit;
-    classDef decision fill:#f8514922,stroke:#f85149,color:inherit;
-    classDef out fill:#2ea04322,stroke:#2ea043,color:inherit;
+    classDef cfg fill:#f3e8ff,stroke:#7c3aed,stroke-width:2px,color:#1e1b2e;
+    classDef stage fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#0f1729;
+    classDef decision fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#2a0a0a;
+    classDef out fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#052e16;
     class CFG,INIT cfg;
     class VDET,CROP,PDET,UPSCALE,FA,LAT,FA2,PARSE,RAWTXT,TRACK,KEEP,SKIP,DRAW stage;
     class LOOP,VEACH,PFOUND,MODE,VALID,BETTER decision;
@@ -282,8 +289,10 @@ subsystem.
 
 ## 🇮🇷 Iran license-plate types — quick reference
 
-<!-- TODO: reserved section — table content to be provided separately. -->
-*Table coming soon.*
+<!-- TODO: reserved section — a richer, image-backed version of this table is coming; content to be provided separately. -->
+*A dedicated English reference table is coming soon. In the meantime, see the
+[Persian plate-types table](#انواع-پلاک-ایران-که-تشخیص-داده-میشوند) near the
+end of this page, and the annotated gallery in [Architecture](#architecture) above.*
 
 ---
 
@@ -321,9 +330,9 @@ flowchart TD
     I4 --> J
     J --> K
 
-    classDef stage fill:#1f6feb22,stroke:#1f6feb,color:inherit;
-    classDef gate fill:#f8514922,stroke:#f85149,color:inherit;
-    classDef iran fill:#8957e522,stroke:#8957e5,color:inherit;
+    classDef stage fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#0f1729;
+    classDef gate fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#2a0a0a;
+    classDef iran fill:#f3e8ff,stroke:#7c3aed,stroke-width:2px,color:#1e1b2e;
     class B,C,E,F,G stage;
     class D gate;
     class I1,I2,I3,I4,J iran;
@@ -589,6 +598,23 @@ own upstream under its own licence.
 این ریپازیتوری یک **دموی مهندسی در دسترس عموم** است، نه یک محصول نهایی تجاری. روی ترافیک معمولی و خیابان‌های خلوت تا نیمه‌شلوغ، خروجی دقیق و باثبات است. روی صحنه‌های خیلی شلوغ یا پلاک‌های خیلی دور (بزرگراه)، دقت افت می‌کند — این یک محدودیت شناخته‌شده است، نه یک باگ پنهان، و دقیقاً همان‌جایی‌ست که یک نسخه‌ی **فاین‌تیون‌شده روی فوتیج واقعی مشتری** تفاوت واقعی ایجاد می‌کند.
 
 به همین ترتیب، تشخیص رنگ/نوع پلاک ایران از نظر منطق کامل و مبتنی بر منابع واقعی است، اما دقتِ خودِ تشخیص رنگ (که بر پایه‌ی آستانه‌های HSV کار می‌کند) هنوز روی تنوع کامل نور/زاویه‌ی دوربین‌های واقعی سنجیده نشده — چیزی که در یک استقرار سفارشی، برای دوربین‌های واقعی مشتری کالیبره و تضمین می‌شود.
+
+### انواع پلاک ایران که تشخیص داده می‌شوند
+
+| نوع پلاک | رنگ زمینه | حرف مشخصه | وضعیت |
+|---|---|---|---|
+| شخصی (عادی) | سفید | حروف عادی (ب/د/س/ص/ط/ق/ل/م/ن/و/ه/ی) | ✅ کامل — روی فوتیج واقعی خودمان تست و تأیید شده؛ اکثریت قریب‌به‌اتفاق پلاک‌های جاده |
+| گذر موقت مناطق آزاد | دو خط چاپی | — (چیدمان کاملاً متفاوت) | ✅ کامل — روی فوتیج واقعی خودمان تست و تأیید شده |
+| تاکسی | زرد | ت | ✅ منطق رنگ+حرف پیاده و روی عکس مرجع تأیید شده — هنوز روی فوتیج واقعیِ در حرکت تست نشده |
+| دولتی | قرمز | الف | ✅ همان بالا |
+| پلیس/انتظامی | سبز | پ | ✅ همان بالا |
+| دیپلمات/سیاسی | آبی | D | ✅ همان بالا |
+| تاریخی (پلاک قهوه‌ای) | قهوه‌ای | چیدمان متفاوت (نام+کد استان) | ⚠️ رنگ تشخیص داده می‌شود؛ خودِ چیدمان هنوز پارس نمی‌شود — محدودیت شناخته‌شده |
+| معلولین و جانبازان | سفید | ژ (به‌صورت آیکون ویلچر چاپ می‌شود، نه حرف) | ⚠️ منطق دسته‌بندی روی ورودی مصنوعی تأیید شده؛ OCR هنوز خودِ آیکون واقعی را نمی‌خواند |
+| ماشین‌آلات کشاورزی | زرد | ک | ✅ منطق رنگ+حرف پیاده‌سازی شده |
+| گذر موقت (غیر منطقه آزاد) | سفید | گ | ✅ منطق رنگ+حرف پیاده‌سازی شده |
+
+توضیح تصویری کامل‌تر (با عکس واقعی/مرجع هر نوع) در بخش [Architecture](#architecture) بالای همین صفحه موجود است.
 
 ### جمع‌بندی
 
