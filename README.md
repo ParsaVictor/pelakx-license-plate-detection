@@ -24,6 +24,8 @@ every reading against the country's *real* plate grammar before believing it.
 
 *Live output, unedited: vehicle detection, plate detection, and OCR running together on real footage — see [more in the notebooks section](#-notebooks--the-fastest-way-to-see-it-work).*
 
+![PelakX](docs/assets/social_preview.png)
+
 </div>
 
 ---
@@ -164,37 +166,35 @@ all running together.
 ### 🧠 How the pipeline thinks — architecture at a glance
 
 ```mermaid
-flowchart TD
-    CFG["configs/*.yaml<br/>vehicle_model + imgsz<br/>(pick a profile per camera)"] --> INIT
-    INIT["Load models once:<br/>YOLO vehicle detector · YOLO plate detector<br/>Hezar CRNN (fa) · fast-plate-ocr (latin) · EasyOCR fallback"] --> LOOP
+%%{init: {"flowchart": {"nodeSpacing": 24, "rankSpacing": 34, "curve": "basis"}, "themeVariables": {"fontSize": "13px"}}}%%
+flowchart LR
+    CFG["configs/*.yaml<br/>model + imgsz"] --> INIT["Load YOLO models<br/>+ OCR engines"]
+    INIT --> LOOP{"Next<br/>frame?"}
+    LOOP -->|no more| EXPORT["Write .mp4<br/>+ .csv"]
 
-    LOOP{"Next video frame?"} -->|yes| VDET
-    LOOP -->|no more frames| EXPORT["Write annotated .mp4 + one-row-per-plate .csv"]
-
-    VDET["Vehicle detection<br/>(YOLO @ configured imgsz)"] --> VEACH{"For each detected<br/>vehicle ≥ confidence"}
-    VEACH --> CROP["Crop the vehicle region"]
-    CROP --> PDET["Plate detection inside the crop<br/>(YOLO, fixed default size —<br/>never resized by the camera profile)"]
-    PDET --> PFOUND{"Plate found<br/>≥ confidence?"}
+    LOOP -->|yes| VDET["Detect vehicles<br/>@ configured imgsz"]
+    VDET --> PDET["Detect plate in crop<br/>(fixed default size)"]
+    PDET --> PFOUND{"Plate<br/>found?"}
     PFOUND -->|no| LOOP
-    PFOUND -->|yes| UPSCALE["Upscale crop if small<br/>(threshold auto-scales with imgsz)"]
+    PFOUND -->|yes| UPSCALE["Upscale if small<br/>(auto-scaled)"]
 
-    UPSCALE --> MODE{"COUNTRY_MODE"}
-    MODE -->|IR| FA["Persian OCR — Hezar CRNN"]
-    MODE -->|GLOBAL| LAT["Latin OCR — fast-plate-ocr"]
-    MODE -->|AUTO| FA2["Persian OCR first"]
-    FA2 --> VALID{"Valid Iranian<br/>plate grammar?"}
+    UPSCALE --> MODE{"Country<br/>mode?"}
+    MODE -->|IR| FA["Persian OCR<br/>Hezar CRNN"]
+    MODE -->|GLOBAL| LAT["Latin OCR<br/>fast-plate-ocr"]
+    MODE -->|AUTO| FA2["Persian OCR<br/>first"]
+    FA2 --> VALID{"Valid IR<br/>plate?"}
     VALID -->|yes| FA
     VALID -->|no| LAT
 
-    FA --> PARSE["Parse Iran fields:<br/>province · letter → category · colour"]
+    FA --> PARSE["Parse IR fields:<br/>province · type · colour"]
     LAT --> RAWTXT["Raw plate text"]
 
-    PARSE --> TRACK["Match to the nearest existing<br/>track by pixel distance"]
+    PARSE --> TRACK["Match nearest<br/>existing track"]
     RAWTXT --> TRACK
-    TRACK --> BETTER{"Higher confidence than<br/>this track's best reading?"}
-    BETTER -->|yes| KEEP["Replace the track's best reading"]
-    BETTER -->|no| SKIP["Keep the previous reading —<br/>text never flickers on screen"]
-    KEEP --> DRAW["Draw box + label on the frame"]
+    TRACK --> BETTER{"Higher<br/>confidence?"}
+    BETTER -->|yes| KEEP["Update track's<br/>best reading"]
+    BETTER -->|no| SKIP["Keep previous —<br/>no flicker"]
+    KEEP --> DRAW["Draw box + label,<br/>write frame"]
     SKIP --> DRAW
     DRAW --> LOOP
 
@@ -203,8 +203,8 @@ flowchart TD
     classDef decision fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#2a0a0a;
     classDef out fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#052e16;
     class CFG,INIT cfg;
-    class VDET,CROP,PDET,UPSCALE,FA,LAT,FA2,PARSE,RAWTXT,TRACK,KEEP,SKIP,DRAW stage;
-    class LOOP,VEACH,PFOUND,MODE,VALID,BETTER decision;
+    class VDET,PDET,UPSCALE,FA,LAT,FA2,PARSE,RAWTXT,TRACK,KEEP,SKIP,DRAW stage;
+    class LOOP,PFOUND,MODE,VALID,BETTER decision;
     class EXPORT out;
 ```
 
@@ -601,20 +601,20 @@ own upstream under its own licence.
 
 ### انواع پلاک ایران که تشخیص داده می‌شوند
 
-| نوع پلاک | رنگ زمینه | حرف مشخصه | وضعیت |
-|---|---|---|---|
-| شخصی (عادی) | سفید | حروف عادی (ب/د/س/ص/ط/ق/ل/م/ن/و/ه/ی) | ✅ کامل — روی فوتیج واقعی خودمان تست و تأیید شده؛ اکثریت قریب‌به‌اتفاق پلاک‌های جاده |
-| گذر موقت مناطق آزاد | دو خط چاپی | — (چیدمان کاملاً متفاوت) | ✅ کامل — روی فوتیج واقعی خودمان تست و تأیید شده |
-| تاکسی | زرد | ت | ✅ منطق رنگ+حرف پیاده و روی عکس مرجع تأیید شده — هنوز روی فوتیج واقعیِ در حرکت تست نشده |
-| دولتی | قرمز | الف | ✅ همان بالا |
-| پلیس/انتظامی | سبز | پ | ✅ همان بالا |
-| دیپلمات/سیاسی | آبی | D | ✅ همان بالا |
-| تاریخی (پلاک قهوه‌ای) | قهوه‌ای | چیدمان متفاوت (نام+کد استان) | ⚠️ رنگ تشخیص داده می‌شود؛ خودِ چیدمان هنوز پارس نمی‌شود — محدودیت شناخته‌شده |
-| معلولین و جانبازان | سفید | ژ (به‌صورت آیکون ویلچر چاپ می‌شود، نه حرف) | ⚠️ منطق دسته‌بندی روی ورودی مصنوعی تأیید شده؛ OCR هنوز خودِ آیکون واقعی را نمی‌خواند |
-| ماشین‌آلات کشاورزی | زرد | ک | ✅ منطق رنگ+حرف پیاده‌سازی شده |
-| گذر موقت (غیر منطقه آزاد) | سفید | گ | ✅ منطق رنگ+حرف پیاده‌سازی شده |
+هر ردیف زیر یا یک فریم واقعی است که خودِ این پروژه تولید کرده («مال ما» — با اجرای کامل پایپ‌لاین روی [نوت‌بوک](notebooks/pelak.ipynb) قابل بازتولید است)، یا یک عکس مرجع است که پیش از نوشتن حتی یک خط کد، برای تأیید رنگ و حرف واقعی همان دسته استفاده شده (منبع: [nikbakhtkhodro.com](https://nikbakhtkhodro.com/%D8%A7%D9%86%D9%88%D8%A7%D8%B9-%D9%BE%D9%84%D8%A7%DA%A9-%D8%AE%D9%88%D8%AF%D8%B1%D9%88%D9%87%D8%A7-%D8%AF%D8%B1-%D8%A7%DB%8C%D8%B1%D8%A7%D9%86/)، فقط برای نمایش/آموزش).
 
-توضیح تصویری کامل‌تر (با عکس واقعی/مرجع هر نوع) در بخش [Architecture](#architecture) بالای همین صفحه موجود است.
+| | تصویر | معنای رنگ/حرف | وضعیت |
+|---|---|---|---|
+| **شخصی (سفید)** | ![شخصی](docs/assets/plate_types/ours_civilian_white.jpg) | زمینه‌ی سفید، حرف عادی (ب/د/س/ص/ط/ق/ل/م/ن/و/ه/ی) ← خودروی شخصی، اکثریت قریب‌به‌اتفاق پلاک‌های جاده. | ✅ مال ما — پایپ‌لاین کامل، عکس واقعی |
+| **گذر موقت مناطق آزاد** | ![گذر موقت](docs/assets/plate_types/ours_free_zone_temp.jpg) | دو خط چاپی (سریال روی «موقت»-استان)؛ چیدمانش کاملاً با بقیه فرق دارد، پس صرف‌نظر از رنگ واقعی‌اش جعبه‌ی بنفش می‌گیرد. | ✅ مال ما — پایپ‌لاین کامل، عکس واقعی |
+| **تاکسی** | ![تاکسی](docs/assets/plate_types/ref_taxi.jpg) | زمینه‌ی زرد + حرف ت. | ✅ منطق رنگ+حرف پیاده و روی همین عکس مرجع تأیید شده — هنوز روی فوتیج واقعیِ در حرکت تست نشده (فعلاً در دسترس نبوده) |
+| **دولتی** | ![دولتی](docs/assets/plate_types/ref_government.jpg) | زمینه‌ی قرمز + حرف الف. | ✅ مشابه بالا |
+| **پلیس** | ![پلیس](docs/assets/plate_types/ref_police.jpg) | زمینه‌ی سبز + حرف پ. | ✅ مشابه بالا |
+| **دیپلمات/سیاسی** | ![دیپلمات](docs/assets/plate_types/ref_diplomat.jpg) | زمینه‌ی آبی + حرف D. | ✅ مشابه بالا |
+| **تاریخی (پلاک قهوه‌ای)** | ![تاریخی](docs/assets/plate_types/ref_historical.jpg) | زمینه‌ی قهوه‌ای؛ چیدمانش کاملاً *متفاوت* است (نام استان + کد، نه جایگاه‌های رقم-حرف-رقم). | ⚠️ رنگ تشخیص داده می‌شود؛ خودِ چیدمان هنوز پارس نمی‌شود — محدودیت شناخته‌شده |
+| **معلولین و جانبازان** | ![معلولین](docs/assets/plate_types/ref_disabled.jpg) | زمینه‌ی سفید؛ جایگاه حرف در واقع **ژ** است که به‌صورت آیکون ویلچر چاپ می‌شود نه خودِ حرف (طبق fa.wikipedia.org — همین هم دلیل اشتباه‌خوانی گاه‌به‌گاه OCR است). | ⚠️ منطق دسته‌بندی روی ورودی مصنوعی تأیید شده؛ موتور OCR هنوز خودِ آیکون واقعی را نمی‌خواند — محدودیت شناخته‌شده |
+
+توضیح: منطق حرف‌های «ماشین‌آلات کشاورزی» (ک، زرد) و «گذر موقت غیرمنطقه‌آزاد» (گ، سفید) هم در کد پیاده‌سازی شده، ولی هنوز عکس نمونه‌ی مرجع/واقعی برایشان در این جدول نداریم.
 
 ### جمع‌بندی
 
