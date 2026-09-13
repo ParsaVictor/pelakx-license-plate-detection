@@ -24,8 +24,6 @@ every reading against the country's *real* plate grammar before believing it.
 
 *Live output, unedited: vehicle detection, plate detection, and OCR running together on real footage — see [more in the notebooks section](#-notebooks--the-fastest-way-to-see-it-work).*
 
-![PelakX](docs/assets/social_preview.png)
-
 </div>
 
 ---
