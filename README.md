@@ -16,8 +16,17 @@ every reading against the country's *real* plate grammar before believing it.
 [![Countries](https://img.shields.io/badge/Grammars-12%20countries-blueviolet)]()
 [![Tests](https://img.shields.io/badge/tests-89%20passing-brightgreen)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)]()
+[![Telegram](https://img.shields.io/badge/Telegram-Parsa__Karkooti-26A5E4?logo=telegram&logoColor=white)](https://t.me/Parsa_Karkooti)
 
 </div>
+
+---
+
+> ### 💼 Need production-grade accuracy on *your own* cameras?
+> This repository is the **open, general-purpose core** — great for evaluation, learning and prototyping,
+> and already solid on everyday traffic. It is **not** tuned to your specific cameras, lighting, distance,
+> or plate mix. For a version **fine-tuned on your own footage** — noticeably higher accuracy, especially on
+> crowded/far-field (highway) scenes — see [**Contact / Custom deployments**](#-contact--custom-deployments).
 
 ---
 
@@ -114,6 +123,30 @@ A real run on 131 frames of dashcam footage, **CPU only, no GPU**:
 
 ---
 
+## 📓 Notebooks — the fastest way to see it work
+
+No `pip install -e`, no CLI — open a notebook, run all cells, get an annotated
+video + CSV of every plate read.
+
+| Notebook | What it is | Status |
+|---|---|---|
+| [`notebooks/pelak_3.ipynb`](notebooks/pelak_3.ipynb) | **Recommended.** Standalone vehicle + plate + OCR pipeline (YOLO detector, Hezar CRNN for Persian / fast-plate-ocr for Latin, EasyOCR fallback). Vehicle model and input resolution are config-driven ([`configs/`](configs)) so a camera/scene can be tuned without touching the notebook. | ✅ Strong on light/moderate traffic. Far-field, crowded highway plates are a known limitation — see the callout above |
+| [`notebooks/pelak.ipynb`](notebooks/pelak.ipynb) | The original standalone pipeline `pelak_3.ipynb` is built on, unmodified. | Reference baseline |
+| [`notebooks/pelak_2.ipynb`](notebooks/pelak_2.ipynb) | An earlier crowded-scene experiment. | ⚠️ Superseded by `pelak_3.ipynb` — kept for history, not recommended |
+| [`notebooks/PelakX_Quickstart.ipynb`](notebooks/PelakX_Quickstart.ipynb) | Walks through the full installable `pelakx` package above (grammar engine, temporal fusion, analytics). | Reference for the CLI/Python API |
+
+> **This is an early-access engineering demo**, not a finished commercial product.
+> It already handles everyday traffic well; far-field/highway accuracy and true
+> production hardening (your cameras, your lighting, your plate mix) are exactly
+> what a [custom deployment](#-contact--custom-deployments) is for.
+
+### 🎬 See it in action
+
+<!-- TODO: embed a demo GIF here, e.g. docs/assets/pelak_3_demo.gif -->
+*Demo GIF coming soon.*
+
+---
+
 ## What makes it different
 
 | | Typical OSS ALPR | **PelakX** |
@@ -185,6 +218,13 @@ its issuing region). Nothing about `letter_semantics`/`province_codes`/the
 colour classifier is Iran-specific in code; adding the same depth for another
 country is a grammar-file PR (sourced colour/letter/region tables), not a new
 subsystem.
+
+---
+
+## 🇮🇷 Iran license-plate types — quick reference
+
+<!-- TODO: reserved section — table content to be provided separately. -->
+*Table coming soon.*
 
 ---
 
@@ -440,6 +480,25 @@ See [docs/ADDING_A_COUNTRY.md](docs/ADDING_A_COUNTRY.md).
 
 Second highest: OCR confusion pairs you actually observed in your own footage.
 Those are worth more than any model swap.
+
+---
+
+## 📞 Contact / Custom deployments
+
+Everything in this repository — the `pelakx` package and the [demo notebooks](#-notebooks--the-fastest-way-to-see-it-work) — is the **open, general-purpose baseline**. It is tuned to work well out of the box, not tuned to *your* cameras, lighting, distance, or plate mix.
+
+Get in touch if you need:
+
+- higher accuracy on **crowded / far-field (highway) footage**
+- a model **fine-tuned on your own recorded footage**
+- integration into an existing system (dashboard, API, alerts, watchlists)
+- ongoing support and maintenance
+
+| | |
+|---|---|
+| 📧 Email | [1.parsa.karkooti@gmail.com](mailto:1.parsa.karkooti@gmail.com) |
+| 💬 Telegram | [@Parsa_Karkooti](https://t.me/Parsa_Karkooti) |
+| 🐙 GitHub | [@ParsaVictor](https://github.com/ParsaVictor) — or open an [issue](../../issues) / [discussion](../../discussions) on this repo |
 
 ---
 
