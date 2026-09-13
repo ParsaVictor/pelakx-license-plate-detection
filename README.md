@@ -20,7 +20,9 @@ every reading against the country's *real* plate grammar before believing it.
 
 <br/>
 
-![PelakX live demo — vehicle and license plate detection with OCR running on real traffic footage](docs/assets/pelak_demo.gif)
+<video src="docs/assets/pelak_demo.mp4" controls autoplay loop muted playsinline width="800">
+Your browser does not support inline video — <a href="docs/assets/pelak_demo.mp4">download the demo (mp4)</a>.
+</video>
 
 *Live output, unedited: vehicle detection, plate detection, and OCR running together on real footage — see [more in the notebooks section](#-notebooks--the-fastest-way-to-see-it-work).*
 
