@@ -128,22 +128,81 @@ A real run on 131 frames of dashcam footage, **CPU only, no GPU**:
 No `pip install -e`, no CLI — open a notebook, run all cells, get an annotated
 video + CSV of every plate read.
 
-| Notebook | What it is | Status |
+One pipeline, two languages — pick whichever you read faster:
+
+| Notebook | Language | What it is |
 |---|---|---|
-| [`notebooks/pelak_3.ipynb`](notebooks/pelak_3.ipynb) | **Recommended.** Standalone vehicle + plate + OCR pipeline (YOLO detector, Hezar CRNN for Persian / fast-plate-ocr for Latin, EasyOCR fallback). Vehicle model and input resolution are config-driven ([`configs/`](configs)) so a camera/scene can be tuned without touching the notebook. | ✅ Strong on light/moderate traffic. Far-field, crowded highway plates are a known limitation — see the callout above |
-| [`notebooks/pelak.ipynb`](notebooks/pelak.ipynb) | The original standalone pipeline `pelak_3.ipynb` is built on, unmodified. | Reference baseline |
-| [`notebooks/pelak_2.ipynb`](notebooks/pelak_2.ipynb) | An earlier crowded-scene experiment. | ⚠️ Superseded by `pelak_3.ipynb` — kept for history, not recommended |
-| [`notebooks/PelakX_Quickstart.ipynb`](notebooks/PelakX_Quickstart.ipynb) | Walks through the full installable `pelakx` package above (grammar engine, temporal fusion, analytics). | Reference for the CLI/Python API |
+| [`notebooks/license_plate_detection.ipynb`](notebooks/license_plate_detection.ipynb) | 🇬🇧 English | **Recommended.** Vehicle detection → plate detection → OCR → Iran-plate parsing, all in one runnable notebook. |
+| [`notebooks/pelak.ipynb`](notebooks/pelak.ipynb) | 🇮🇷 فارسی | همان نوت‌بوک، همان کد، همان منطق — فقط راهنماها و خروجی‌ها به فارسی. |
+| [`notebooks/PelakX_Quickstart.ipynb`](notebooks/PelakX_Quickstart.ipynb) | 🇬🇧 English | Walks through the full installable `pelakx` package above (grammar engine, temporal fusion, analytics) — a separate, more heavily-instrumented codebase. |
+
+Both pipeline notebooks are **config-driven**: the vehicle detection model and
+its input resolution are read from a YAML file ([`configs/`](configs)), with
+four ready-made profiles from a quiet street to a highway camera — retune a
+deployment for a new camera without touching a single line of code.
 
 > **This is an early-access engineering demo**, not a finished commercial product.
-> It already handles everyday traffic well; far-field/highway accuracy and true
-> production hardening (your cameras, your lighting, your plate mix) are exactly
-> what a [custom deployment](#-contact--custom-deployments) is for.
+> It already reads plates smartly and accurately on everyday traffic; far-field/highway
+> accuracy and true production hardening (your cameras, your lighting, your exact
+> plate mix) are exactly what a [custom deployment](#-contact--custom-deployments) is for.
+> The same detection + OCR + parsing pipeline works for **any country's plates** —
+> swap in an OCR model trained on that country's plates and the grammar layer
+> follows.
 
 ### 🎬 See it in action
 
-<!-- TODO: embed a demo GIF here, e.g. docs/assets/pelak_3_demo.gif -->
+<!-- TODO: embed a demo GIF here, e.g. docs/assets/pelak_demo.gif -->
 *Demo GIF coming soon.*
+
+### 🧠 How the pipeline thinks — architecture at a glance
+
+```mermaid
+flowchart TD
+    CFG["configs/*.yaml<br/>vehicle_model + imgsz<br/>(pick a profile per camera)"] --> INIT
+    INIT["Load models once:<br/>YOLO vehicle detector · YOLO plate detector<br/>Hezar CRNN (fa) · fast-plate-ocr (latin) · EasyOCR fallback"] --> LOOP
+
+    LOOP{"Next video frame?"} -->|yes| VDET
+    LOOP -->|no more frames| EXPORT["Write annotated .mp4 + one-row-per-plate .csv"]
+
+    VDET["Vehicle detection<br/>(YOLO @ configured imgsz)"] --> VEACH{"For each detected<br/>vehicle ≥ confidence"}
+    VEACH --> CROP["Crop the vehicle region"]
+    CROP --> PDET["Plate detection inside the crop<br/>(YOLO, fixed default size —<br/>never resized by the camera profile)"]
+    PDET --> PFOUND{"Plate found<br/>≥ confidence?"}
+    PFOUND -->|no| LOOP
+    PFOUND -->|yes| UPSCALE["Upscale crop if small<br/>(threshold auto-scales with imgsz)"]
+
+    UPSCALE --> MODE{"COUNTRY_MODE"}
+    MODE -->|IR| FA["Persian OCR — Hezar CRNN"]
+    MODE -->|GLOBAL| LAT["Latin OCR — fast-plate-ocr"]
+    MODE -->|AUTO| FA2["Persian OCR first"]
+    FA2 --> VALID{"Valid Iranian<br/>plate grammar?"}
+    VALID -->|yes| FA
+    VALID -->|no| LAT
+
+    FA --> PARSE["Parse Iran fields:<br/>province · letter → category · colour"]
+    LAT --> RAWTXT["Raw plate text"]
+
+    PARSE --> TRACK["Match to the nearest existing<br/>track by pixel distance"]
+    RAWTXT --> TRACK
+    TRACK --> BETTER{"Higher confidence than<br/>this track's best reading?"}
+    BETTER -->|yes| KEEP["Replace the track's best reading"]
+    BETTER -->|no| SKIP["Keep the previous reading —<br/>text never flickers on screen"]
+    KEEP --> DRAW["Draw box + label on the frame"]
+    SKIP --> DRAW
+    DRAW --> LOOP
+
+    classDef cfg fill:#8957e522,stroke:#8957e5,color:inherit;
+    classDef stage fill:#1f6feb22,stroke:#1f6feb,color:inherit;
+    classDef decision fill:#f8514922,stroke:#f85149,color:inherit;
+    classDef out fill:#2ea04322,stroke:#2ea043,color:inherit;
+    class CFG,INIT cfg;
+    class VDET,CROP,PDET,UPSCALE,FA,LAT,FA2,PARSE,RAWTXT,TRACK,KEEP,SKIP,DRAW stage;
+    class LOOP,VEACH,PFOUND,MODE,VALID,BETTER decision;
+    class EXPORT out;
+```
+
+Every box above is a real function in the notebook — this is not a simplified
+marketing diagram, it is the actual control flow of `process_video()`.
 
 ---
 
@@ -510,6 +569,30 @@ Built on [Ultralytics YOLO](https://github.com/ultralytics/ultralytics),
 [Hezar](https://github.com/hezarai/hezar), [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)
 and OpenCV. PelakX ships **no model weights** — every model is fetched from its
 own upstream under its own licence.
+
+---
+
+## 🇮🇷 معرفی کامل — به فارسی
+
+**پلاک‌ایکس (PelakX)** یک سیستم هوشمند تشخیص و تحلیل پلاک خودروست که از یک ویدیوی خام (دوربین ترافیکی، دش‌کم، یا هر منبع ویدیویی دیگر) خروجی قابل‌استفاده و جست‌وجوپذیر می‌سازد: هر خودرو را تشخیص می‌دهد، ردیابی می‌کند، پلاکش را در اسکریپت درست (فارسی یا لاتین) می‌خواند، و برخلاف اغلب ابزارهای مشابه، خروجی OCR را کورکورانه قبول نمی‌کند — آن را با گرامر واقعی پلاک همان کشور می‌سنجد تا فقط خوانش‌های معتبر و قابل‌اعتماد باقی بمانند.
+
+### چرا این پروژه هوشمند و دقیق است
+
+- **تشخیص دومرحله‌ای**: ابتدا خودرو پیدا می‌شود، بعد پلاک *داخل* همان خودرو جست‌وجو می‌شود — این کار محدوده‌ی جست‌وجو را حدود ۹۵٪ کوچک‌تر می‌کند و باعث می‌شود هر پلاک صاحب مشخصی (یک خودرو) داشته باشد، دقیقاً همان چیزی که رأی‌گیری زمانی (temporal vote) و تحلیل‌های بعدی را ممکن می‌کند.
+- **رأی‌گیری روی کل ردیابی، نه یک فریم تنها**: به‌جای اعتماد به یک خوانش تصادفی از یک فریم، سیستم چند خوانش از فریم‌های مختلف یک خودرو را می‌بیند و قوی‌ترین/باثبات‌ترین نتیجه را نگه می‌دارد — متن پلاک روی ویدیو پرش نمی‌کند.
+- **پارامترهای قابل‌تنظیم بدون دست‌زدن به کد**: مدل تشخیص خودرو و اندازه‌ی تصویر ورودی از یک فایل کانفیگ خوانده می‌شوند؛ همین یک تغییر، پروژه را از یک خیابان خلوت تا یک بزرگراه شلوغ قابل‌تنظیم می‌کند — و یک پارامتر سوم (آستانه‌ی بزرگ‌نمایی قبل از OCR) به‌طور کاملاً خودکار و متناسب با آن محاسبه می‌شود، بدون این‌که کیفیت OCR فدا شود.
+- **مستقل از کشور و زبان، در سطح معماری**: هسته‌ی تشخیص (YOLO) و لایه‌ی OCR کاملاً از هم جدا هستند. یعنی این پایپ‌لاین به‌طور ذاتی محدود به ایران نیست — برای هر کشوری که یک مدل OCR مناسب پلاک‌های همان کشور در اختیار داشته باشیم، همین معماری با کمی تنظیم قابل استفاده است. پکیج کامل `pelakx` (کنار همین نوت‌بوک‌ها) همین امروز ۱۲ گرامر کشور را از قبل پیاده‌سازی کرده.
+- **پشتیبانی عمیق از پلاک ایران**: خواندن ارقام و حرف، تشخیص کد دورقمی استان، تشخیص رنگ زمینه‌ی پلاک (سفید/زرد/قرمز/سبز/آبی)، تشخیص نوع پلاک از روی حرف (شخصی/تاکسی/دولتی/پلیس/دیپلمات/کشاورزی/معلولین‌وجانبازان/گذر موقت)، و تشخیص چیدمان پلاک موقت مناطق آزاد.
+
+### وضعیت فعلی و صداقت درباره‌ی محدودیت‌ها
+
+این ریپازیتوری یک **دموی مهندسی در دسترس عموم** است، نه یک محصول نهایی تجاری. روی ترافیک معمولی و خیابان‌های خلوت تا نیمه‌شلوغ، خروجی دقیق و باثبات است. روی صحنه‌های خیلی شلوغ یا پلاک‌های خیلی دور (بزرگراه)، دقت افت می‌کند — این یک محدودیت شناخته‌شده است، نه یک باگ پنهان، و دقیقاً همان‌جایی‌ست که یک نسخه‌ی **فاین‌تیون‌شده روی فوتیج واقعی مشتری** تفاوت واقعی ایجاد می‌کند.
+
+به همین ترتیب، تشخیص رنگ/نوع پلاک ایران از نظر منطق کامل و مبتنی بر منابع واقعی است، اما دقتِ خودِ تشخیص رنگ (که بر پایه‌ی آستانه‌های HSV کار می‌کند) هنوز روی تنوع کامل نور/زاویه‌ی دوربین‌های واقعی سنجیده نشده — چیزی که در یک استقرار سفارشی، برای دوربین‌های واقعی مشتری کالیبره و تضمین می‌شود.
+
+### جمع‌بندی
+
+اگر به‌دنبال یک نقطه‌ی شروع قوی، شفاف و قابل‌اعتماد برای تشخیص پلاک هستید — این پروژه دقیقاً همان است. اگر به‌دنبال دقت production-grade روی دوربین‌های خودتان هستید، از بخش [تماس با ما](#-contact--custom-deployments) پیام بدهید.
 
 ## License
 
