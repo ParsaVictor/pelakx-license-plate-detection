@@ -1,5 +1,7 @@
 <div align="center">
 
+<video src="assets/demo.mp4" autoplay loop muted playsinline width="100%"></video>
+
 # 🚗 PelakX
 
 **Multilingual License Plate Intelligence — Read. Validate. Understand.**
